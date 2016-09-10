@@ -2,7 +2,7 @@
 
 //Include the CAN libraries for the Teensy microprocessor
 #include <FlexCAN.h>
-#include <kinetis_flexcan.h>
+//#include <kinetis_flexcan.h>
 
 //Declare which pin is connected to the LED
 //Use the Teensy Reference Card and the board schematics to 
@@ -13,7 +13,7 @@ const int redLEDpin = 21;
 FlexCAN CANbus(250000);
 
 //Set up the CAN data structure
-CAN_message_t rxmsg;
+static CAN_message_t rxmsg;
 
 //set up a counter for each received message
 unsigned long int rxCount = 0;
@@ -30,27 +30,44 @@ void setup() {
 
   //start the CAN access
   CANbus.begin();
-
+  rxmsg.timeout = 0;
+  
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Hello Teensy 3.2 CAN Receive Test."));
+  Serial.println(F("Teensy 3.2 CAN Receive Test."));
 
- 
+  //print a header
+  Serial.print(F("Count\tuSec\tID\tDLC"));
+  for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
+    char byteDigits[4]; //declare a byte display array
+    sprintf(byteDigits,"\tB%i",i);
+    Serial.print(byteDigits); 
+  }
+  
     
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-
- 
+  if(CANbus.read(rxmsg)){
+    rxCount++;
+    
+    uint32_t ID = rxmsg.id;
+    uint8_t len = rxmsg.len;
+    
+    char timeCountIDandDLCdigits[40]; 
+    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%08X\t%1i",rxCount,micros(),ID,len);
+    Serial.print(timeCountIDandDLCdigits); 
+      
+    for (uint8_t i = 0; i<len;i++){ 
+      char byteDigits[4]; 
+      sprintf(byteDigits,"\t%02X",rxmsg.buf[i]);
+      Serial.print(byteDigits); 
+    }
+    Serial.println();
+  }
   
-
-  if (LEDtoggleTimer >=50){
-     CANbus.read(rxmsg);
-      rxCount++;
-      Serial.println(rxmsg.id); 
-    
-    
+  if (LEDtoggleTimer >=100){
     LEDtoggleTimer = 0; //reset the timer
     ledState = !ledState; // Toggle values
     digitalWrite(redLEDpin,ledState);
