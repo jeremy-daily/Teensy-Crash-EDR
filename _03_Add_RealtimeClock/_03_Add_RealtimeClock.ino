@@ -56,7 +56,7 @@ void setup() {
   }
   
   //print a header
-  Serial.print(F("Count\tuSec\tYYYY-MM-DD HH:MM:SS.milli\tID\tDLC"));
+  Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.ms\t  CAN ID\tDLC"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[4]; //declare a byte display array
     sprintf(byteDigits,"\tB%i",i);
