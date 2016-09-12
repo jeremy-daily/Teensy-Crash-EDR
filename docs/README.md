@@ -1,0 +1,1 @@
+This is in the docs directory and is used to host files for the project website.
