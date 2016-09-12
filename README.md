@@ -1,5 +1,9 @@
 # Teensy-Crash-EDR
-A Teensy 3.2 based through hole project that includes CAN, SD, an ADXL375 High G triaxial accelerometer, an AdaFruit Ultimate GPS breakout, An ESP
+A Teensy 3.2 based through hole project that includes CAN, SD, GPS, Wireless, and Accelerometers.
+
+CAUTION: This device is not intended to be used on public roadways. Connecting this device to a CAN bus may affect the operation of a vehicle or piece ofe equipment. If you decide to use the device and any code or derivatives, then anything bad that happens is your fault. Please use these resources responsibly.
+
+The project website is https://jeremy-daily.github.io/Teensy-Crash-EDR/
 
 ## Project Purpose
 The goal of this project is to design and share an open source data acquisition device that can be used for vehicle crash testing. The crash tests
