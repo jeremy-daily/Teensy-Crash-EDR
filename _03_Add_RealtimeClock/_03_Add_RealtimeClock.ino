@@ -81,14 +81,14 @@ void loop() {
   }
 
   // Uncomment this to synchronize the RTC to your PC time.
-  /*  if (Serial.available()) {
+    if (Serial.available()) {
       time_t t = processSyncMessage();
       if (t != 0) {
         Teensy3Clock.set(t); // set the RTC
         setTime(t);
       }
     }
-  */
+  
   
   while(CANbus.read(rxmsg)){
     rxCount++;

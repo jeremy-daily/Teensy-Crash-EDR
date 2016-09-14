@@ -107,7 +107,10 @@ void loop() {
     uint32_t PGN = (ID & 0x03FFFF00) >> 8; //Parameter Group Number
     uint8_t DA;
     if (PGN >= 0xF000) DA = 0xFF; //Broadcast message to a global address
-    else DA = (ID & 0x0000FF00) >> 8; //Destination specific address
+    else {
+      DA = (ID & 0x0000FF00) >> 8; //Destination specific address
+      PGN = (PGN & 0xFF00); //set the PGN value to have zeros on the second byte.
+    }
     uint8_t priority = (ID & 0x1C000000) >> 26;
     
     uint8_t len = rxmsg.len;

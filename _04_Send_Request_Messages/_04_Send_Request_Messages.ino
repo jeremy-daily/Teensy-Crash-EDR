@@ -82,7 +82,7 @@ void setup() {
   rxmsg.timeout = 0;
   txmsg.timeout = 0;
   txmsg.len = 3;
-  txmsg.id = 0x18EA00F6;
+  txmsg.id = 0x18EA00F6; //Reqest PGN
   txmsg.ext = 1;
   
   //try to wait for the Serial bus to come up for 1 second
@@ -163,7 +163,7 @@ void loop() {
     if (pgnIndex > sizeof(PGNRequestList) ) pgnIndex = 0;
 
     txmsg.ext = 1;
-    txmsg.id = 0x18EA00F9;
+    txmsg.id = 0x18EA00F9; //request PGN
     txmsg.buf[0] = (pgnToRequest & 0x0000FF);
     txmsg.buf[1] = (pgnToRequest & 0x00FF00) >> 8 ;
     txmsg.buf[2] = (pgnToRequest & 0xFF0000) >> 16;

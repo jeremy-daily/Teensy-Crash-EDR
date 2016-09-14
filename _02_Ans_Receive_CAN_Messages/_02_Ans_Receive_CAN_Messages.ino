@@ -56,12 +56,12 @@ void loop() {
     uint8_t len = rxmsg.len;
     
     char timeCountIDandDLCdigits[40]; 
-    sprintf(timeCountIDandDLCdigits,"%10i,%10i,\"%08X\",%1i",rxCount,micros(),ID,len);
+    sprintf(timeCountIDandDLCdigits,"%10i,%10i,\'%08X,%1i",rxCount,micros(),ID,len);
     Serial.print(timeCountIDandDLCdigits); 
       
     for (uint8_t i = 0; i<len;i++){ 
       char byteDigits[12]; 
-      sprintf(byteDigits,",\"%02X\"",rxmsg.buf[i]);
+      sprintf(byteDigits,",\'%02X",rxmsg.buf[i]);
       Serial.print(byteDigits); 
     }
     Serial.println();
