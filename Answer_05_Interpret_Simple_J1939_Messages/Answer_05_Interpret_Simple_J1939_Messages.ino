@@ -11,11 +11,11 @@
  * Author: Dr. Jeremy S. Daily
  * The University of Tulsa, Mechanical Engineering
  * 
- * Assignment: Adapt the code to elimnate all serial output commands
- * except for the value for vehicle speed. This data can be plotted on 
- * the Arduino Serial Plotter. Do this by commenting out Serial.print 
- * statements that are not needed. 
+ * Solution: Adapt the previous code to elimnate all serial output commands
+ * except for the value for vehicle speed. This data should be able to be plotted on 
+ * the Arduino Serial Plotter.
  */
+
 //Include the CAN libraries for the Teensy microprocessor
 #include <FlexCAN.h>
 #include <TimeLib.h>
@@ -71,19 +71,19 @@ void setup() {
     Serial.println(F("RTC has set the system time"));
   }
   //print the time:
-  char timeDisplay[45]; 
-  sprintf(timeDisplay,"Current Time:\t%04i-%02i-%02iT%02i:%02i:%02i",year(),month(),day(),hour(),minute(),second());
-  Serial.println(timeDisplay); 
+  //char timeDisplay[45]; 
+  //sprintf(timeDisplay,"Current Time:\t%04i-%02i-%02iT%02i:%02i:%02i",year(),month(),day(),hour(),minute(),second());
+  //Serial.println(timeDisplay); 
 
     
   //print a header. The F( ) functions stores the string to be displayed in the larger flash memory
-  Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.ms\t  CAN ID\tDLC\tPriority\thexPGN\tdecPGN\tDA\tSA"));
+  //Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.ms\t  CAN ID\tDLC\tPriority\thexPGN\tdecPGN\tDA\tSA"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[4]; //declare a byte display array
     sprintf(byteDigits,"\tB%i",i);
-    Serial.print(byteDigits); 
+ //   Serial.print(byteDigits); 
   }
-  Serial.println(F("\tAcronym\tSignals"));
+ // Serial.println(F("\tAcronym\tSignals"));
   
   //before entering the loop, set the previous time
   previousTime = now();
@@ -102,16 +102,7 @@ void loop() {
     millisecondsPerSecond = 0;
   }
 
-  // Uncomment this to synchronize the RTC to your PC time.
-  /*  if (Serial.available()) {
-      time_t t = processSyncMessage();
-      if (t != 0) {
-        Teensy3Clock.set(t); // set the RTC
-        setTime(t);
-      }
-    }
-  */
-  
+ 
   while(CANbus.read(rxmsg)){
     rxCount++;
     
@@ -130,42 +121,30 @@ void loop() {
     
     uint8_t len = rxmsg.len;
 
-    //Format the output string
-    char timeCountIDandDLCdigits[100]; 
-    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%04i-%02i-%02iT%02i:%02i:%02i.%03i\t%08X\t%3i\t%8i\t%06X\t%6i\t%3i\t%3i",
-      rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(millisecondsPerSecond),ID,len,
-      priority,PGN,PGN,DA,SA);
-    Serial.print(timeCountIDandDLCdigits); 
-
-    //Display the bytes  
-    for (uint8_t i = 0; i<len;i++){ 
-      char byteDigits[4]; 
-      sprintf(byteDigits,"\t%02X",rxmsg.buf[i]);
-      Serial.print(byteDigits); 
-    }
-
     //interpret some messages on the fly
-    if (PGN == 65265) //Cruise Control Vehicle Speed
+    if (PGN == 65265 && SA == 0) //Cruise Control Vehicle Speed from the engine
     {
-      Serial.print(F("\tCCVS"));
+      //Serial.print(F("\tCCVS"));
       //
-      Serial.print(F("\tSpeed (mph):\t"));
-      float SPN84 = word(rxmsg.buf[2],rxmsg.buf[1])/256.0; //Speed in kmph
+      //Serial.print(F("\tSpeed (mph):\t"));
+      float SPN84 = (rxmsg.buf[2] << 8 | rxmsg.buf[1])/256.0; //Speed in kmph
       float speedMPH = SPN84 * 0.621271;
       if (SPN84 <  251)
         Serial.print(speedMPH);
       else if (SPN84 > 255) Serial.print(F("Not Available"));
       else Serial.print(F("Out of Range"));
+      Serial.println();
       
-      Serial.print(F("\tBrake Switch:\t"));
-      uint8_t SPN597 = (rxmsg.buf[3] & 0b00001100) >> 2;
-      Serial.print(SPN597,BIN);
-      if      (SPN597 == 0) Serial.print(F("\tBrake pedal released"));
-      else if (SPN597 == 1) Serial.print(F("\tBrake pedal depressed"));
-      else if (SPN597 == 2) Serial.print(F("\tError"));
-      else                  Serial.print(F("\tNot Available"));
+      //Serial.print(F("\tBrake Switch:\t"));
+      //uint8_t SPN597 = (rxmsg.buf[3] & 0b00001100) >> 2;
+      //Serial.print(SPN597,BIN);
+      //if      (SPN597 == 0) Serial.print(F("\tBrake pedal released"));
+      //else if (SPN597 == 1) Serial.print(F("\tBrake pedal depressed"));
+      //else if (SPN597 == 2) Serial.print(F("\tError"));
+      //else                  Serial.print(F("\tNot Available"));
       
     }
+    /*
     else if (PGN == 65248) //Vehicle Distance
     {
       Serial.print(F("\tVD"));
@@ -184,8 +163,9 @@ void loop() {
       float SPN917miles = SPN917 * 0.621271;
       Serial.print(SPN917miles);
     }
+    */
     
-    Serial.println(); //Go to the next line
+    //Serial.println() //Go to the next line
   }
   
   if (LEDtoggleTimer >=100){
