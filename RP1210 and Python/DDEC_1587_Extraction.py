@@ -2743,7 +2743,7 @@ for request in requests:
         for j in range(0,bands):
             percentTripTimeDataValue['Speed and RPM Table'].append([])
             for k in range(0,bands):
-                percentTripTimeDataValue['Speed and RPM Table'][j].append('%0.2f' %(100 * percentTripTimeDataValue['Speed and RPM Times'][j][k]/float(total)))
+                percentTripTimeDataValue['Speed and RPM Table'][j].append('%0.2f' %(100 * percentTripTimeDataValue['Speed and RPM Times'][j][k]/float(total+.00001)))
          
         percentTripTimeDataValue['SpeedTimeTotal']=total 
          
@@ -2765,7 +2765,7 @@ for request in requests:
         for j in range(0,bands):
             percentTripTimeDataValue['Load and RPM Table'].append([])
             for k in range(0,bands):
-                percentTripTimeDataValue['Load and RPM Table'][j].append('%0.2f' %(100 * percentTripTimeDataValue['Load and RPM Times'][j][k]/float(total)))
+                percentTripTimeDataValue['Load and RPM Table'][j].append('%0.2f' %(100 * percentTripTimeDataValue['Load and RPM Times'][j][k]/float(total+.00001)))
         
         percentTripTimeDataValue['LoadTimeTotal']=total 
         
@@ -2783,7 +2783,7 @@ for request in requests:
         
         percentTripTimeDataValue['Over Speed Table']=[]
         for k in range(0,bands):
-                percentTripTimeDataValue['Over Speed Table'].append('%0.3f' %(100 * percentTripTimeDataValue['Over Speed Times'][k]/float(total)))
+                percentTripTimeDataValue['Over Speed Table'].append('%0.3f' %(100 * percentTripTimeDataValue['Over Speed Times'][k]/float(total+.00001)))
         
         
         
@@ -2795,9 +2795,9 @@ for request in requests:
                 percentTripTimeDataValue['Over Rev Times'].append(seconds)
                 
         percentTripTimeDataValue['Over Rev Table']=[]
-        percentTripTimeDataValue['Over Rev Table'].append('%0.3f' %(100 * percentTripTimeDataValue['Over Rev Times'][k]/float(total)))
+        percentTripTimeDataValue['Over Rev Table'].append('%0.3f' %(100 * percentTripTimeDataValue['Over Rev Times'][k]/float(total+.00001)))
         for k in range(0,bands):
-            percentTripTimeDataValue['Over Rev Table'].append('%0.3f' %(100 * percentTripTimeDataValue['Over Rev Times'][k]/float(total)))
+            percentTripTimeDataValue['Over Rev Table'].append('%0.3f' %(100 * percentTripTimeDataValue['Over Rev Times'][k]/float(total+.00001)))
         
         
         #print(percentTripTimeDataValue)

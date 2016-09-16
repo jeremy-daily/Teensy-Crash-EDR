@@ -75,7 +75,7 @@ RP1210_GetLastErrorMsg      = prototype( ("RP1210_GetLastErrorMsg", RP1210DLL ) 
 # Connect to Device
 print( "Attempting connect to DLL [%s], DeviceID [%d]" %( dllName, deviceID ) )
 
-szProtocolName = bytes("J1939",'ascii')
+szProtocolName = bytes("J1939:Channel=1",'ascii')
 nClientID = RP1210_ClientConnect( HWND(None), c_short( deviceID ), szProtocolName, 0, 0, 0  )
 
 print('The Client ID is: %i' %nClientID )
