@@ -7,9 +7,8 @@ Created on Thu Sep 15 09:14:18 2016
 
 import serial
 
-
 for i in range(1000):
-    ser = serial.Serial("COM9")
+    ser = serial.Serial("COM9") # Dont' open and close the serial port all the time if you want fast code.
     dataLine = ser.readline()
     ser.close()
     with open("C:\\Users\\jeremy\\Documents\\SpeedData.csv",'a') as dataFile:
