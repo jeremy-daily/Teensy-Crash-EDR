@@ -7,7 +7,7 @@
 #
 # This is a minimal program that tests to see if you can connect to an RP1210 device.
 #
-# Assignment: See if you can modify this code to use a different RP1210 device.
+# Solution: This code has been modified to use a different adapter.
 
 import struct
 import sys
@@ -19,7 +19,7 @@ from   array import *
 from   time import *
 
 #define the name of the RP1210 DLL
-dllName =   "DPA4PMA.DLL" 
+dllName =   "NXULNK32.DLL" 
 
 #define the protocol ID:
 protocolID = 2
@@ -75,7 +75,7 @@ RP1210_GetLastErrorMsg      = prototype( ("RP1210_GetLastErrorMsg", RP1210DLL ) 
 # Connect to Device
 print( "Attempting connect to DLL [%s], DeviceID [%d]" %( dllName, deviceID ) )
 
-szProtocolName = bytes("J1939",'ascii')
+szProtocolName = bytes("J1939:Channel=1;Baud=Auto",'ascii') #This protocol name comes from the .ini file in the Windows directory.
 nClientID = RP1210_ClientConnect( HWND(None), c_short( deviceID ), szProtocolName, 0, 0, 0  )
 
 print('The Client ID is: %i' %nClientID )

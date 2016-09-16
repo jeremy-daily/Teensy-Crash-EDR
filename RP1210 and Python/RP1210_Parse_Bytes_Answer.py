@@ -6,8 +6,9 @@
 # Tulsa, OK 74104
 #
 # This is a minimal program that tests to see if you can connect to an RP1210 device.
+# It add the ability to print raw byte strings to the console.
 #
-# Assignment: See if you can modify this code to use a different RP1210 device.
+# Assignment: Add a function that can interpret the RP1210 Byte Fields.
 
 import struct
 import sys
@@ -18,6 +19,33 @@ from   ctypes.wintypes import HWND
 from   array import *
 from   time import *
 
+def interpretRP1210Fields (bufferAsBytes,nRetVal,protocol):
+	'''This function provides a way to separate out the bytes from a received RP1210 message.'''
+	if "J1939" in protocol:
+		timeStamp = int(struct.unpack('>L',(ucTxRxBuffer[0]+ucTxRxBuffer[1]+ucTxRxBuffer[2]+ucTxRxBuffer[3]))[0])
+		PGN       = int(struct.unpack('<L',(ucTxRxBuffer[4]+ucTxRxBuffer[5]+ucTxRxBuffer[6]+b'\x00'))[0])
+		HowSentAndPriority   =  int( struct.unpack( 'B', ucTxRxBuffer[7] )[0])
+		priority = int( HowSentAndPriority & 0x07)
+		HowSent  = int((HowSentAndPriority & 0x80) >> 7 )
+		SourceAddress      = struct.unpack( 'B', ucTxRxBuffer[8]   )[0]
+		DestinationAddress = struct.unpack( 'B', ucTxRxBuffer[9]   )[0]
+		
+		
+		nDataBytes = nRetVal - 10
+		print("J1939",end=",")
+		print("%10i" %timeStamp, end="," )
+		print(PGN, end="," )
+		print(priority, end="," )
+		print(HowSent, end="," )
+		print(SourceAddress, end="," )
+		print(DestinationAddress, end="" )
+		for ucByte in ucTxRxBuffer[10:nRetVal] :
+			print(",%02X" %ucByte, end="" )
+		print()
+	return 
+
+	
+	
 #define the name of the RP1210 DLL
 dllName =   "DPA4PMA.DLL" 
 
@@ -71,14 +99,22 @@ RP1210_GetErrorMsg          = prototype( ("RP1210_GetErrorMsg", RP1210DLL ) )
 prototype                   = WINFUNCTYPE( c_short, c_void_p, c_char_p, c_short             )
 RP1210_GetLastErrorMsg      = prototype( ("RP1210_GetLastErrorMsg", RP1210DLL ) )
 
+clientNames = {} # build a dictionary of client Connect sessions
+
 
 # Connect to Device
 print( "Attempting connect to DLL [%s], DeviceID [%d]" %( dllName, deviceID ) )
-
-szProtocolName = bytes("J1939",'ascii')
+szProtocolName = bytes("J1939:Channel=1;Baud=Auto",'ascii') #This protocol name comes from the .ini file in the Windows directory.
 nClientID = RP1210_ClientConnect( HWND(None), c_short( deviceID ), szProtocolName, 0, 0, 0  )
+clientNames[nClientID] = str(szProtocolName,'ascii')
+print('The Client ID is: %i for Protocol: %s' %(nClientID, str(szProtocolName,'ascii') ))
 
-print('The Client ID is: %i' %nClientID )
+# szProtocolName = bytes("J1708",'ascii') #This protocol name comes from the .ini file in the Windows directory.
+# nClientID = RP1210_ClientConnect( HWND(None), c_short( deviceID ), szProtocolName, 0, 0, 0  )
+# clientNames[nClientID] = str(szProtocolName,'ascii')
+# print('The Client ID is: %i for Protocol: %s' %(nClientID, str(szProtocolName,'ascii') ))
+
+
 
 #-----------------------------------------------------------------------------------------------------
 # Call RP1210_ReadDetailedVersion to get DLL, API, FW versions.
@@ -107,6 +143,21 @@ if nRetVal == 0 :
 else :
    print('RP1210_Set_All_Filters_States_to_Pass returns %i' %nRetVal )
 
+#Read some messages:
+ucTxRxBuffer = (c_char*2000)()
+NON_BLOCKING_IO = 0
+while True:
+
+	if msvcrt.kbhit():
+		break
+	
+	nRetVal = RP1210_ReadMessage( c_short( nClientID ), byref( ucTxRxBuffer ), c_short( 2000 ), c_short( NON_BLOCKING_IO ) )
+	if nRetVal > 0:
+		print("RAW", end=",")
+		print(ucTxRxBuffer[:nRetVal])
+		interpretRP1210Fields (ucTxRxBuffer, nRetVal, clientNames[nClientID])
+	
+	
 # Disconnect from the VDA
 
 input("Press Enter to Quit.")
