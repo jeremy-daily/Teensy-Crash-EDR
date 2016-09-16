@@ -38,6 +38,7 @@ void setup() {
   
   CANbus.begin();
   txmsg.len = 8;
+  txmsg.ext = 1;
   txmsg.timeout = 0;
   txmsg.id = 0x1CFFFFFF;
   
