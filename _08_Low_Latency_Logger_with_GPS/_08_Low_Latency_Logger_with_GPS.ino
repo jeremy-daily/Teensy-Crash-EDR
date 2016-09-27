@@ -650,9 +650,9 @@ void logData() {
   // Truncate file if recording stopped early.
   if (bn != FILE_BLOCK_COUNT) {
     Serial.println(F("Truncating file"));
-    Serial.print(F("512L * bn"));
-    Serial.println(512L * bn);
-    if (!binFile.truncate(512L * bn)) {
+    Serial.print(F("uint32_t(512 * bn)"));
+    Serial.println(uint32_t(512 * bn));
+    if (!binFile.truncate(uint32_t(512 * bn))) {
       error("Can't truncate file");
     }
   }
