@@ -44,7 +44,7 @@
  */
 
 //Include the CAN libraries for the Teensy 3.6 microprocessor
-#include <FlexCAN2.h>
+#include <FlexCAN.h>
 #include <kinetis_flexcan.h>
 
 
@@ -64,6 +64,8 @@ unsigned long int rxCount = 0;
 
 //set up a timer to toggle the LEDs so the delay function isn't needed.
 elapsedMillis LEDtoggleTimer;
+elapsedMillis CANRXTimer;
+
 
 //Keep track of the LED states
 boolean ledState = false;
@@ -102,6 +104,7 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   if(CANbus.read(rxmsg)){
+    
     uint32_t ID = rxmsg.id;
     uint8_t len = rxmsg.len;
     
@@ -122,5 +125,4 @@ void loop() {
     ledState = !ledState; // Toggle values
     digitalWrite(LED_BUILTIN,ledState);
   }
-  
 }

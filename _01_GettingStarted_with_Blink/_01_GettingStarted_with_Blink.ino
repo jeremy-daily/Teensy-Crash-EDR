@@ -1,4 +1,4 @@
-/* ANSWER
+/* 
  * Title: A first sketch to blink an LED 
  * Description: This is a basic Ardunino program to show how to upload a program and
  * change its behavior. It is intended to be used with a board with an external LED.

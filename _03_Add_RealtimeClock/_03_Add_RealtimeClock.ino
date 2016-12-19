@@ -36,14 +36,11 @@
  * Assignment:
  * 1. Set the time of the Teensy 3.6 by sending the formatted time string from the PC
  *    using the python time setting script. 
- * 2. Add the decimal value for real time stamp to the serial output console
- * 3. (ADVANCED) Include an interrupt to keep track of the number of microseconds
- *    between each second. 
- * 4. Display the difference in microseconds between each CAN message.   
+ * 2. Display the difference in microseconds between each CAN message.   
  */
 
 //Include the CAN libraries for the Teensy 3.6 microprocessor
-#include <FlexCAN2.h>
+#include <FlexCAN.h>
 #include <kinetis_flexcan.h>
 
 #include <TimeLib.h>
@@ -63,9 +60,9 @@ static CAN_message_t rxmsg;
 //set up a counter for each received message
 unsigned long int rxCount = 0;
 
-//set up a timer to toggle the LEDs so the delay function isn't needed.
-elapsedMillis LEDtoggleTimer;
-elapsedMillis displayTimer;
+elapsedMillis LEDtoggleTimer; //set up a timer to toggle the LEDs so the delay function isn't needed.
+elapsedMillis CANRXTimer; //Keep track of how long its been since a CAN message was received
+elapsedMillis displayTimer; //Only display data every so often.
 
 //Keep track of microseconds
 elapsedMicros microsecondsPerSecond;
@@ -76,9 +73,6 @@ boolean ledState = false;
 boolean redLEDstate = false;
 boolean greenLEDstate = true;
 
-
-//set up a variable to keep track of the timestamp
-time_t previousTime = 0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -93,14 +87,14 @@ void setup() {
 
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Receive Test."));
+  Serial.println(F("Teensy 3.6 CAN Receive Test with Real Time Clock."));
   
   // set the Time library to use Teensy 3.0's RTC to keep time
   setSyncProvider(getTeensy3Time);
   if (timeStatus()!= timeSet) {
-    Serial.println("Unable to sync with the RTC");
+    Serial.println(F("Unable to sync with the RTC"));
   } else {
-    Serial.println("RTC has set the system time");
+    Serial.println(F("RTC has set the system time"));
   }
   setSyncInterval(1);
 
@@ -134,12 +128,20 @@ void loop() {
       if (t != 0) {
         Teensy3Clock.set(t); // set the RTC
         setTime(t);
+        redLEDstate = true; 
+        digitalWrite(redLEDpin, redLEDstate); // show RED LED to show clock was set. 
+    
       }
     }
   
   
   if(CANbus.read(rxmsg)){
     rxCount++;
+    CANRXTimer = 0; //reset the timer since the last CAN message was received.
+   
+    //add these to toggle the LEDs when a message arrives.
+    greenLEDstate = !greenLEDstate;
+    digitalWrite(greenLEDpin, greenLEDstate); 
     
     uint32_t ID = rxmsg.id;
     uint8_t len = rxmsg.len;
@@ -154,10 +156,6 @@ void loop() {
       Serial.print(byteDigits); 
     }
     Serial.println();
-    redLEDstate = !redLEDstate;
-    greenLEDstate = !greenLEDstate;
-    digitalWrite(redLEDpin, redLEDstate); 
-    digitalWrite(greenLEDpin, greenLEDstate); 
   }
   
   if (LEDtoggleTimer >=500){
@@ -165,7 +163,9 @@ void loop() {
     ledState = !ledState; // Toggle values
     digitalWrite(LED_BUILTIN,ledState);
   }
-  
+
+  if (CANRXTimer > 200) digitalWrite(greenLEDpin,LOW); //Turn off the LED if no CAN traffic is present.
+
 }
 
 time_t getTeensy3Time(){

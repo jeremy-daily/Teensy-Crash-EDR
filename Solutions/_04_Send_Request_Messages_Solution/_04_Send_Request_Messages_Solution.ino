@@ -38,6 +38,8 @@
  * 
  * Assignment:
  * 1. Add at least 5 new requests for J1939 PGNs that are on request only.   
+ * 
+ * 2. Add a serial display line with the Transmit buffer contents. Indicate TX or RX on the displayed line.
  *
  */
 
@@ -92,14 +94,15 @@ FlexCAN CANbus(250000);
 static CAN_message_t rxmsg;
 static CAN_message_t txmsg; //Add another data structure
 
-//set up a counter for each received message
+//set up a counter for each message
 unsigned long int rxCount = 0;
+uint32_t txCount = 0;
 
 //set up a timer to toggle the LEDs so the delay function isn't needed.
 elapsedMillis LEDtoggleTimer;
-elapsedMillis millisecondsPerSecond;
 elapsedMillis CANRXTimer; //Keep track of how long its been since a CAN message was received
-elapsedMillis requestTimer;
+elapsedMillis displayTimer; //Only display data every so often.
+elapsedMillis requestTimer; //The count of milliseconds between each request
 
 //Keep track of microseconds
 elapsedMicros microsecondsPerSecond;
@@ -162,20 +165,13 @@ void setup() {
   }
   
    //print a header
-  Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.usec\tdT(us)\t  CAN ID\tDLC"));
+  Serial.print(F("Dir      Count     micros YYYY-MM-DD HH:MM:SS.usec dT(us)   CAN ID DLC"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[4]; //declare a byte display array
-    sprintf(byteDigits,"\tB%i",i);
+    sprintf(byteDigits," B%i",i);
     Serial.print(byteDigits); 
   }
 
-
-  //before entering the loop, set the previous time
-  previousTime = now();
-  //synchronize the millisecondPerSecond timer
-  while (now() - previousTime < 1){
-    millisecondsPerSecond = 0;
-  }  
 }
 
 void loop() {
@@ -204,12 +200,12 @@ void loop() {
     uint8_t len = rxmsg.len;
     
     char timeCountIDandDLCdigits[50]; 
-    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%04i-%02i-%02iT%02i:%02i:%02i.%06i\t%6i\t%08X\t%1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
+    sprintf(timeCountIDandDLCdigits,"RX  %10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
     Serial.print(timeCountIDandDLCdigits); 
       
     for (uint8_t i = 0; i<len;i++){ 
       char byteDigits[4]; 
-      sprintf(byteDigits,"\t%02X",rxmsg.buf[i]);
+      sprintf(byteDigits," %02X",rxmsg.buf[i]);
       Serial.print(byteDigits); 
     }
     Serial.println();
@@ -243,6 +239,19 @@ void loop() {
     txmsg.buf[1] = (pgnToRequest & 0x00FF00) >> 8 ;
     txmsg.buf[2] = (pgnToRequest & 0xFF0000) >> 16;
     CANbus.write(txmsg);
+    txCount++;
+    
+    char timeCountIDandDLCdigits[50]; 
+    sprintf(timeCountIDandDLCdigits," TX %10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",txCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),txmsg.id,txmsg.len);
+    Serial.print(timeCountIDandDLCdigits); 
+    for (uint8_t i = 0; i<txmsg.len;i++){ 
+      char byteDigits[4]; 
+      sprintf(byteDigits," %02X",txmsg.buf[i]);
+      Serial.print(byteDigits); 
+    }
+    Serial.println();
+    microsBetweenMessages=0;
+  
   }
   
 
