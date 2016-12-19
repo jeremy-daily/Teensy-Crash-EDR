@@ -7,38 +7,32 @@ unsigned long txCount, rxCount;
 unsigned long txTimer, rxTimer;
 
 // Declare pin numbers based on the schematic
-#define greenLED  23
-#define redLED    22
-#define CANconnect 2
-#define CAN1termination 16
-#define CAN2termination 21
-
+#define greenLED  5
+#define redLED    14
   
 void confirmationBlink(){
-  const int greenLed = 23;
   int ledState = LOW;
   uint32_t previousMillis = 0;
   const long blinkOn = 500;
   const long blinkOff = 500;
   uint32_t currentMillis = millis();
-  digitalWrite(greenLed, HIGH);
+  digitalWrite(greenLED, HIGH);
 }
 
 void fatalBlink(){
-  const int redLed = 23;
-  digitalWrite(redLed, HIGH);
+  digitalWrite(redLED, HIGH);
   delay(500);
-  digitalWrite(redLed, LOW);
+  digitalWrite(redLED, LOW);
   delay(250);
-  digitalWrite(redLed, HIGH);
+  digitalWrite(redLED, HIGH);
   delay(500);
-  digitalWrite(redLed, LOW);
+  digitalWrite(redLED, LOW);
   delay(250);
-  digitalWrite(redLed, HIGH);
+  digitalWrite(redLED, HIGH);
   delay(500);
-  digitalWrite(redLed, LOW);
+  digitalWrite(redLED, LOW);
   delay(250);
-  digitalWrite(redLed, HIGH);
+  digitalWrite(redLED, HIGH);
 }
 
 uint32_t getBaudRate() {
@@ -129,16 +123,10 @@ void setup() {
   //Set up the pin functions
   pinMode(greenLED,OUTPUT);
   pinMode(redLED,OUTPUT);
-  pinMode(CANconnect,OUTPUT);
-  pinMode(CAN1termination,OUTPUT);
-  pinMode(CAN2termination,OUTPUT);
   pinMode(LED_BUILTIN,OUTPUT);
 
   digitalWrite(greenLED,greenLEDstate);
   digitalWrite(redLED,redLEDstate);
-  digitalWrite(CANconnect,LOW);
-  digitalWrite(CAN1termination,LOW);
-  digitalWrite(CAN2termination,LOW);
   digitalWrite(LED_BUILTIN,LEDstate);
    
   pinMode(greenLed, OUTPUT);
