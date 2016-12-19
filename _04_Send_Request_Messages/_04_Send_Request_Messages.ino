@@ -38,6 +38,8 @@
  * 
  * Assignment:
  * 1. Add at least 5 new requests for J1939 PGNs that are on request only.   
+ * 
+ * 2. Add a serial display line with the Transmit buffer contents. Indicate TX or RX on the displayed line.
  *
  */
 
@@ -56,26 +58,7 @@ const uint16_t PGNRequestList[28] = {
   65244, // Idle Operation
   65260, // Vehicle Identification
   65255, // Vehicle Hours
-  65253, // Engine Hours, Revolutions
-  65257, // Fuel Consumption (Liquid)
-  65256, // Vehicle Direction/Speed
-  65254, // Time/Date
-  65211, // Trip Fan Information
-  65210, // Trip Distance Information
-  65209, // Trip Fuel Information (Liquid)
-  65207, // Engine Speed/Load Factor Information
-  65206, // Trip Vehicle Speed/Cruise Distance Information
-  65205, // Trip Shutdown Information
-  65204, // Trip Time Information 1
-  65200, // Trip Time Information 2
-  65250, // Transmission Configuration
-  65203, // Fuel Information (Liquid)
-  65201, // ECU History
-  65168, // Engine Torque History
-  64981, // Electronic Engine Controller 5
-  64978, // ECU Performance
-  64965, // ECU Identification Information
-  65165  // Vehicle Electrical Power #2
+
 };
 
 uint8_t pgnIndex = 0;
@@ -92,14 +75,15 @@ FlexCAN CANbus(250000);
 static CAN_message_t rxmsg;
 static CAN_message_t txmsg; //Add another data structure
 
-//set up a counter for each received message
+//set up a counter for each message
 unsigned long int rxCount = 0;
+uint32_t txCount = 0;
 
 //set up a timer to toggle the LEDs so the delay function isn't needed.
 elapsedMillis LEDtoggleTimer;
-elapsedMillis millisecondsPerSecond;
 elapsedMillis CANRXTimer; //Keep track of how long its been since a CAN message was received
-elapsedMillis requestTimer;
+elapsedMillis displayTimer; //Only display data every so often.
+elapsedMillis requestTimer; //The count of milliseconds between each request
 
 //Keep track of microseconds
 elapsedMicros microsecondsPerSecond;
@@ -151,7 +135,7 @@ void setup() {
   
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Teensy 3.2 CAN Receive Test."));
+  Serial.println(F("Teensy 3.6 CAN Receive Test with Request Messages."));
   
   //Set System Time
   if (timeStatus()!= timeSet) {
@@ -162,20 +146,13 @@ void setup() {
   }
   
    //print a header
-  Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.usec\tdT(us)\t  CAN ID\tDLC"));
+  Serial.print(F("     Count     micros YYYY-MM-DD HH:MM:SS.usec dT(us)   CAN ID DLC"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[4]; //declare a byte display array
-    sprintf(byteDigits,"\tB%i",i);
+    sprintf(byteDigits," B%i",i);
     Serial.print(byteDigits); 
   }
 
-
-  //before entering the loop, set the previous time
-  previousTime = now();
-  //synchronize the millisecondPerSecond timer
-  while (now() - previousTime < 1){
-    millisecondsPerSecond = 0;
-  }  
 }
 
 void loop() {
@@ -204,12 +181,12 @@ void loop() {
     uint8_t len = rxmsg.len;
     
     char timeCountIDandDLCdigits[50]; 
-    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%04i-%02i-%02iT%02i:%02i:%02i.%06i\t%6i\t%08X\t%1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
+    sprintf(timeCountIDandDLCdigits,"%10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
     Serial.print(timeCountIDandDLCdigits); 
       
     for (uint8_t i = 0; i<len;i++){ 
       char byteDigits[4]; 
-      sprintf(byteDigits,"\t%02X",rxmsg.buf[i]);
+      sprintf(byteDigits," %02X",rxmsg.buf[i]);
       Serial.print(byteDigits); 
     }
     Serial.println();
@@ -243,6 +220,10 @@ void loop() {
     txmsg.buf[1] = (pgnToRequest & 0x00FF00) >> 8 ;
     txmsg.buf[2] = (pgnToRequest & 0xFF0000) >> 16;
     CANbus.write(txmsg);
+    txCount++;
+   
+    microsBetweenMessages=0;
+  
   }
   
 

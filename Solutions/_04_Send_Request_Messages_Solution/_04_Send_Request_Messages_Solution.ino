@@ -130,8 +130,8 @@ void setup() {
   
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Send Request Messages"));
-  
+  Serial.println(F("Teensy 3.6 CAN Receive Test with Request Messages."));
+   
   // set the Time library to use Teensy 3.0's RTC to keep time
   setSyncProvider(getTeensy3Time);
   if (timeStatus()!= timeSet) {
