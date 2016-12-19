@@ -22,7 +22,7 @@
 
 //Declare which pin is connected to the LED
 //Use the Teensy Reference Card and the board schematics to determine the pin number
-const int redLEDpin = 21;
+const int redLEDpin = 14;
 
 //initiate the CAN library at 250kbps
 FlexCAN CANbus(250000);
