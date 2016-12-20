@@ -145,7 +145,7 @@ void loop() {
     if (PGN >= 0xF000) DA = 0xFF; //Broadcast message to a global address
     else {
       DA = (ID & 0x0000FF00) >> 8; //Destination specific address
-      PGN = (PGN & 0xFF00); //set the PGN value to have zeros on the second byte.
+      PGN = (PGN & 0x03FF00); //set the PGN value to have zeros on the second byte.
     }
     uint8_t priority = (ID & 0x1C000000) >> 26;
     
@@ -170,11 +170,11 @@ void loop() {
       Serial.print(F("\tCCVS"));
       //
       Serial.print(F("\tSpeed (mph):\t"));
-      float SPN84 = word(rxmsg.buf[2],rxmsg.buf[1])/256.0; //Speed in kmph
+      float SPN84 = word(rxmsg.buf[2],rxmsg.buf[1])/256.0; //Speed in km/h
       float speedMPH = SPN84 * 0.621271;
       if (SPN84 <  251)
         Serial.print(speedMPH);
-      else if (SPN84 > 255) Serial.print(F("Not Available"));
+      else if (SPN84 >= 255) Serial.print(F("Not Available"));
       else Serial.print(F("Out of Range"));
       
       Serial.print(F("\tBrake Switch:\t"));

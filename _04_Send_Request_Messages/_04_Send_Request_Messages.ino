@@ -50,7 +50,7 @@
 
 #include <TimeLib.h>
 
-const uint16_t PGNRequestList[28] = {
+const uint16_t PGNRequestList[7] = {
   65261, // Cruise Control/Vehicle Speed Setup
   65214, // Electronic Engine Controller 4
   65259, // Component Identification
@@ -89,7 +89,7 @@ elapsedMillis requestTimer; //The count of milliseconds between each request
 elapsedMicros microsecondsPerSecond;
 elapsedMicros microsBetweenMessages;
 
-const int millisBetweenRequests = 1000;
+const int millisBetweenRequests = 100;
 
 //Keep track of the LED states
 boolean ledState = false;
