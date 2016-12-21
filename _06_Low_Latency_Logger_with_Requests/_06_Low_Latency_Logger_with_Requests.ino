@@ -54,41 +54,43 @@
 #include <FlexCAN.h>
 #include <TimeLib.h>
 
+#define USE_SDIO 1
+
 // User data functions.  Modify these functions for your data items.
 // Edit this include file to change data_t.
 #include "UserDataType.h"  
 
-const int millisBetweenRequests = 5000;
+const int millisBetweenRequests = 200;
 
-#define numRequests 4
+#define numRequests 28
 const uint16_t PGNRequestList[numRequests] = {
-  //65261, // Cruise Control/Vehicle Speed Setup
-  //65214, // Electronic Engine Controller 4
+  65261, // Cruise Control/Vehicle Speed Setup
+  65214, // Electronic Engine Controller 4
   65259, // Component Identification
   65242, // Software Identification
-  //65244, // Idle Operation
+  65244, // Idle Operation
   65260, // Vehicle Identification
-  //65255, // Vehicle Hours
-  //65253, // Engine Hours, Revolutions
-  //65257, // Fuel Consumption (Liquid)
-  //65256, // Vehicle Direction/Speed
-  //65254, // Time/Date
-  //65211, // Trip Fan Information
-  //65210, // Trip Distance Information
-  //65209, // Trip Fuel Information (Liquid)
-  //65207, // Engine Speed/Load Factor Information
-  //65206, // Trip Vehicle Speed/Cruise Distance Information
-  //65205, // Trip Shutdown Information
-  //65204, // Trip Time Information 1
-  //65200, // Trip Time Information 2
-  //65250, // Transmission Configuration
-  //65203, // Fuel Information (Liquid)
-  //65201, // ECU History
-  //65168, // Engine Torque History
-  //64981, // Electronic Engine Controller 5
-  //64978, // ECU Performance
+  65255, // Vehicle Hours
+  65253, // Engine Hours, Revolutions
+  65257, // Fuel Consumption (Liquid)
+  65256, // Vehicle Direction/Speed
+  65254, // Time/Date
+  65211, // Trip Fan Information
+  65210, // Trip Distance Information
+  65209, // Trip Fuel Information (Liquid)
+  65207, // Engine Speed/Load Factor Information
+  65206, // Trip Vehicle Speed/Cruise Distance Information
+  65205, // Trip Shutdown Information
+  65204, // Trip Time Information 1
+  65200, // Trip Time Information 2
+  65250, // Transmission Configuration
+  65203, // Fuel Information (Liquid)
+  65201, // ECU History
+  65168, // Engine Torque History
+  64981, // Electronic Engine Controller 5
+  64978, // ECU Performance
   64965, // ECU Identification Information
-  //65165  // Vehicle Electrical Power #2
+  65165  // Vehicle Electrical Power #2
 };
 
 uint8_t pgnIndex = 0;
@@ -116,8 +118,8 @@ char serialInput;
 
 // The led blinks for fatal errors. The led goes on solid for SD write
 // overrun errors and logging continues.
-const uint8_t ERROR_LED_PIN = 14;
-const uint8_t GREEN_LED_PIN = 5;
+const uint8_t ERROR_LED_PIN = 5;
+const uint8_t GREEN_LED_PIN = 14;
 
 
 // Acquire a data record.
@@ -211,7 +213,14 @@ const uint8_t BUFFER_BLOCK_COUNT = 4;
 #else  // RAMEND
 // Use total of 13 512 byte buffers.
 const uint8_t BUFFER_BLOCK_COUNT = 12;
-#endif  // RAMEND
+#endif  // 
+
+// 32 KiB buffer.
+const size_t BUF_DIM = 32768;
+
+// 8 MiB file.
+const uint32_t FILE_SIZE = 256UL*BUF_DIM;
+
 
 // Temporary log file.  Will be deleted if a reset or power failure occurs.
 char TMP_FILE_NAME[13] = "tmp_data.bin";
@@ -219,11 +228,25 @@ char TMP_FILE_NAME[13] = "tmp_data.bin";
 // Size of file base name.  Must not be larger than five.
 const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
 
-SdFatSdio sd;
+//SdFatSdio sd;
+
+SdFatSdioEX sd;
 
 //SdFatSdioEX sdEx;
 
-SdBaseFile binFile;
+File file;
+
+uint8_t buf[BUF_DIM];
+
+// buffer as uint32_t
+uint32_t* buf32 = (uint32_t*)buf;
+
+bool sdBusy() {
+  return sd.card()->isBusy();
+}
+
+
+File binFile;
 
 char binName[13] = FILE_BASE_NAME "000.bin";
 
@@ -347,7 +370,7 @@ void binaryToCsv() {
   binFile.rewind();
   // Create a new csvFile.
   strcpy(csvName, binName);
-  strcpy(&csvName[BASE_NAME_SIZE + 4], ".csv");
+  strcpy(&csvName[BASE_NAME_SIZE + 4], "csv");
 
   if (!csvFile.open(csvName, O_WRITE | O_CREAT | O_TRUNC)) {
     error("open csvFile failed");
@@ -548,10 +571,10 @@ void logData(uint32_t baudrate) {
     }
     bgnErase = endErase + 1;
   }
-  // Start a multiple block write.
-  if (!sd.card()->writeStart(bgnBlock, FILE_BLOCK_COUNT)) {
-    error("writeBegin failed");
-  }
+  //Start a multiple block write.
+  //if (!sd.card()->writeStart(bgnBlock, FILE_BLOCK_COUNT)) {
+  //  error("writeBegin failed");
+  //}
   // Initialize queues.
   emptyHead = emptyTail = 0;
   fullHead = fullTail = 0;
@@ -677,7 +700,7 @@ void logData(uint32_t baudrate) {
       fullTail = queueNext(fullTail);
       // Write block to SD.
       uint32_t usec = micros();
-      if (!sd.card()->writeData((uint8_t*)pBlock)) {
+      if (!file.write((uint8_t*)pBlock,512)){          //),sd.card()->writeData((uint8_t*)pBlock)) {
         error("write data failed");
       }
       usec = micros() - usec;
@@ -707,9 +730,9 @@ void logData(uint32_t baudrate) {
   }
   Serial.println(F("Closing Temp Buffer File."));
       
-  if (!sd.card()->writeStop()) {
-    error("writeStop failed");
-  }
+//  if (!sd.card()->writeStop()) {
+//    error("writeStop failed");
+//  }
   digitalWrite(ERROR_LED_PIN, HIGH);
   digitalWrite(GREEN_LED_PIN, LOW);
   // Truncate file if recording stopped early.
@@ -784,8 +807,8 @@ void setup(void) {
   sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
   Serial.println(timeString);
   
-  Serial.print(F("FreeRam: "));
-  Serial.println(FreeRam());
+//  Serial.print(F("FreeRam: "));
+///  Serial.println(FreeRam());
   Serial.print(F("Records/block: "));
   Serial.println(DATA_DIM);
   if (sizeof(block_t) != 512) {
@@ -797,6 +820,7 @@ void setup(void) {
     sd.initErrorPrint();
     fatalBlink();
   }
+  sd.chvol();
   // set date time callback function
   SdFile::dateTimeCallback(dateTime);
   
@@ -821,11 +845,12 @@ void truncateTempfiles(){
   digitalWrite(ERROR_LED_PIN,HIGH);
   digitalWrite(GREEN_LED_PIN,HIGH);
   if (sd.exists(TMP_FILE_NAME)) {
-    Serial.println("Found exsiting temp file."); 
+    Serial.println("Found exsiting temp file.");
     
-    SdBaseFile tempFile;
+    //SdBaseFile tempFile;
+    File tempFile;
  
-    tempFile.open(TMP_FILE_NAME, O_RDWR);
+    if (!tempFile.open(TMP_FILE_NAME, O_RDWR | O_CREAT)) error("open failed");
     
     byte someBytes[4];
     bool stillSearching = true;
