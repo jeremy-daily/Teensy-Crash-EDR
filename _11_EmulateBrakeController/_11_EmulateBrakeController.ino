@@ -51,6 +51,7 @@
 //Use the Teensy Reference Card and the board schematics to determine the pin number
 const uint8_t redLEDpin = 5;
 const uint8_t greenLEDpin = 14;
+const uint8_t J1708RXpin = 22;
 
 //initiate the CAN library at 250kbps
 FlexCAN CANbus(250000);
@@ -95,7 +96,13 @@ void setup() {
 
   txmsg.ext = 1;
   txmsg.len = 8;
-  memset(txmsg.buf,0,8);
+  memset(txmsg.buf,0xFF,8);
+  
+  Serial1.begin(9600);
+  Serial1.setRX(27);
+  Serial1.setTX(26);
+  pinMode(J1708RXpin,INPUT);
+  
 }
 
 void loop() {
@@ -108,6 +115,8 @@ void loop() {
     greenLEDstate = !greenLEDstate;
     digitalWrite(greenLEDpin, greenLEDstate);  
   }
+
+  digitalWrite(redLEDpin,!digitalRead(J1708RXpin)); 
   
   if (LEDtoggleTimer >=500){
     LEDtoggleTimer = 0; //reset the timer
@@ -121,16 +130,22 @@ void loop() {
   if (hundredMillisTimer >= 100){
     hundredMillisTimer = 0;
     
-    txmsg.id = 0x18F0010B; //EBC1 J1939 message
-    CANbus.write(txmsg);
-    txCount++;
-    
-    txmsg.id = 0x18FEF117; //EBC1 J1939 message
-    CANbus.write(txmsg);
-    txCount++;
-    
-    txmsg.id = 0x18FEBF0B; //EBC2 J1939 message
-    CANbus.write(txmsg);
-    txCount++;
+//    txmsg.id = 0x18F0010B; //EBC1 J1939 message
+//    CANbus.write(txmsg);
+//    txCount++;
+//    
+//    txmsg.id = 0x18FEF117; //CCVS J1939 message from Instrument Cluster
+//    CANbus.write(txmsg);
+//    txCount++;
+//    
+//    txmsg.id = 0x18FEBF0B; //EBC2 J1939 message
+//    CANbus.write(txmsg);
+//    txCount++;
+  }
+  if (Serial1.available()){
+    byte c = Serial1.read();
+    char byteDigits[6];
+    sprintf(byteDigits,"%02X ",c);
+    Serial.print(byteDigits);
   }
 }
