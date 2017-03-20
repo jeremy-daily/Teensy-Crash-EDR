@@ -42,7 +42,7 @@ time_t GPStime = 0;
 
 const int tzoffset = -5;   // Central Time
 
-static CAN_message_t rxmsg,txmsg;
+//static CAN_message_t rxmsg,txmsg;
 
 IntervalTimer oneSecondReset;
 elapsedMicros microsecondsPerSecond;
@@ -79,10 +79,13 @@ void resetMicros() {
 
 // Acquire a data record.
 void acquireCANData(data_t* data) {
+  CAN_message_t rxmsg;
+  Can0.read(rxmsg);
   data->timeStamp = now();
   data->usec = uint32_t(microsecondsPerSecond);
   data->type = 0;
   data->ID = ( 0x00 << 24 ) | rxmsg.id; // let the first byte in the ID data word to be 0 if this is GPS data.
+  Serial.println(rxmsg.id,HEX);
   data->DLC = rxmsg.len;
   memset(data->dataField,0xFF,8);
   for (uint8_t i = 0; i < rxmsg.len; i++){
@@ -287,9 +290,13 @@ struct block_t {
 */
 uint32_t getBaudRate() {
   digitalWrite(LED_BUILTIN,HIGH);
-  while (autobaudTimeout < 4000){
+  CAN_filter_t allPassFilter;
+  allPassFilter.ext=1;
+      
+  autobaudTimeout = 0;
+  while (autobaudTimeout < 1000){
  
-    processSetTimeUtility();
+    //processSetTimeUtility();
     for(uint8_t i=0;i<numBaudRates;i++){
       uint32_t baudrate = baudRateList[i];
       Serial.print(F("Trying Baudrate of "));
@@ -297,8 +304,6 @@ uint32_t getBaudRate() {
       //Serial.println(F("Beginning test."));
       Can0.begin(baudrate);
       //The default filters exclude the extended IDs, so we have to set up CAN filters to allow those to pass.
-      CAN_filter_t allPassFilter;
-      allPassFilter.ext=1;
       for (uint8_t filterNum = 8; filterNum < 16;filterNum++){ //only use half the available filters for the extended IDs
         Can0.setFilter(allPassFilter,filterNum); 
       }
@@ -321,6 +326,9 @@ uint32_t getBaudRate() {
   Serial.println(F("Setting Default Baudrate of 500000"));
   baudrate =  500000;
   Can0.begin(baudrate);
+  for (uint8_t filterNum = 8; filterNum < 16;filterNum++){ //only use half the available filters for the extended IDs
+        Can0.setFilter(allPassFilter,filterNum); 
+    }
   return baudrate;
 }
 
@@ -611,6 +619,9 @@ void logData() {
     emptyQueue[emptyHead] = &block[i];
     emptyHead = queueNext(emptyHead);
   }
+
+  getBaudRate();
+  
   Serial.println(F("Logging - type any character to stop"));
   // Wait for Serial Idle.
   Serial.flush();
@@ -676,19 +687,15 @@ void logData() {
         Serial.println(overrun);
       } 
       else {
-        if (Can0.read(rxmsg)) acquireCANData(&curBlock->data[curBlock->count++]);
-        if (Serial1.available()) {
-          char q = Serial1.read();
-          //Serial.print(q);
-          gpsEncoded = gps.encode(q);
-        }
+        
+        if (Can0.available()) acquireCANData(&curBlock->data[curBlock->count++]);
         
         if (GPSsampleTimer >= 200){
           GPSsampleTimer = 0; 
           acquireGPSData(&curBlock->data[curBlock->count++]);
         }
 
-        if (highGsampleTimer >= 312){ //mircoseconds for 3200 Hz
+        if (highGsampleTimer >= 310){///mircoseconds for 3200 Hz
           highGsampleTimer = 0;
           SPI.setDataMode(SPI_MODE3);
           digitalWrite(SD_CS_PIN,HIGH);
@@ -766,7 +773,7 @@ void logData() {
     Serial.println(F("Truncating file"));
     Serial.print(F("uint32_t(512 * bn)"));
     Serial.println(uint32_t(512 * bn));
-    if (!binFile.truncate(uint32_t(512 * bn))) {
+    if (!binFile.truncate(uint32_t(512UL * bn))) {
       error("Can't truncate file");
     }
   }
@@ -863,6 +870,7 @@ void setup(void) {
   SdFile baudFile;
   baudFile.open("baudRate.txt", O_RDWR | O_CREAT | O_AT_END);
   baudFile.println(timeString);
+  
   baudFile.close();
   
   Serial.println("Wrote Baudrate to a file.");
@@ -901,7 +909,9 @@ void loop(void) {
   if (ERROR_LED_PIN >= 0) {
     digitalWrite(ERROR_LED_PIN, LOW);
   }
-  
+  pinMode(LED_BUILTIN,OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+
   // discard any input
   while (Serial.read() >= 0) {}
   
