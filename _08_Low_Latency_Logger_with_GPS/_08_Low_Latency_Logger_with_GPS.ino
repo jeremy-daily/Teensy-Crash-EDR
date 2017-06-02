@@ -32,17 +32,20 @@ time_t GPStime = 0;
 // User data functions.  Modify these functions for your data items.
 #include "UserDataType.h"  // Edit this include file to change data_t.
 
-FlexCAN CANbus(250000);
+FlexCAN CANbus(500000);
 static CAN_message_t rxmsg;
 
 IntervalTimer oneSecondReset;
 elapsedMicros microsecondsPerSecond;
 elapsedMillis buttonPressTimer;
 elapsedMillis GPSsampleTimer;
+elapsedMillis LEDblinkTimer;
 
 TinyGPS gps;
 
 boolean gpsEncoded;
+
+boolean LEDstate;
 
 void resetMicros() {
   microsecondsPerSecond = 0; //reset the timer
@@ -116,20 +119,20 @@ void printData(Print* pr, data_t* data) {
   if (type == 0 || type ==1 ){
     time_t recordTime = data->timeStamp;
     char timeString[100];
-    sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d\t",year(recordTime),month(recordTime),day(recordTime),hour(recordTime),minute(recordTime),second(recordTime),data->usec);
+    sprintf(timeString,"%04d-%02d-%02d,%02d:%02d:%02d.%06d,",year(recordTime),month(recordTime),day(recordTime),hour(recordTime),minute(recordTime),second(recordTime),data->usec);
     pr->print(timeString);
     
     sprintf(timeString,"%10d.%06d",data->timeStamp,data->usec);
     pr->print(timeString);
     
     
-    char IDString[11];
-    sprintf(IDString,"\t%08X\t",data->ID);
+    char IDString[12];
+    sprintf(IDString,",%08X,",data->ID);
     pr->print(IDString);
     pr->print(data->DLC);
     for (int i = 0; i < 8; i++) {
-      char entry[4];
-      sprintf(entry,"\t%02X",data->dataField[i]);
+      char entry[5];
+      sprintf(entry,",%02X",data->dataField[i]);
       pr->print(entry);
     }
     pr->println();
@@ -523,7 +526,7 @@ void logData() {
   uint32_t logTime = micros()/LOG_INTERVAL_USEC + 1;
   logTime *= LOG_INTERVAL_USEC;
   bool closeFile = false;
-  digitalWrite(ERROR_LED_PIN,HIGH);
+  //digitalWrite(ERROR_LED_PIN,HIGH);
   while (1) {
      if (Serial1.available()) gps.encode(Serial1.read());
   
@@ -535,15 +538,25 @@ void logData() {
     }
 
     if (closeFile) {
+      Serial.println(F("Closing Temp Buffer File."));
+     // Serial.print("curBlock: ");
+     // Serial.println(curBlock);
+      Serial.print("curBlock->count: ");
+      Serial.println(curBlock->count);
+      
+      
       if (curBlock != 0 && curBlock->count >= 0) {
         // Put buffer in full queue.
         fullQueue[fullHead] = curBlock;
         fullHead = queueNext(fullHead);
+        Serial.print(F("Updated fullHead to "));
+        Serial.println(fullHead);
         curBlock = 0;
       }
     } 
     else {
       if (curBlock == 0 && emptyTail != emptyHead) {
+        //Serial.println(F("curBloc == 0 && emptyTail != emptyHead"));
         curBlock = emptyQueue[emptyTail];
         emptyTail = queueNext(emptyTail);
         curBlock->count = 0;
@@ -558,6 +571,8 @@ void logData() {
 //      }
       if (curBlock == 0) {
         overrun++;
+        Serial.print(F("Overrun: "));
+        Serial.println(overrun);
       } else {
         if (CANbus.read(rxmsg)) acquireCANData(&curBlock->data[curBlock->count++]);
         if (Serial1.available()) {
@@ -571,7 +586,14 @@ void logData() {
           acquireGPSData(&curBlock->data[curBlock->count++]);
         }
         
-        if (curBlock->count == DATA_DIM) {
+        if (LEDblinkTimer >= 500){
+          LEDblinkTimer = 0; 
+          LEDstate = !LEDstate;
+          digitalWrite(ERROR_LED_PIN,LEDstate);
+        }
+        
+        if (curBlock->count >= DATA_DIM) {
+          //Serial.println(F("curBlock->count >= DATA_DIM"));
           fullQueue[fullHead] = curBlock;
           fullHead = queueNext(fullHead);
           curBlock = 0;
@@ -580,18 +602,20 @@ void logData() {
     }
 
     if (fullHead == fullTail) {
+      //Serial.println(F("fullHead == fullTail"));
       // Exit loop if done.
       if (closeFile) {
         break;
       }
     } else if (!sd.card()->isBusy()) {
+      //Serial.println(F("!sd.card()->isBusy()"));
       // Get address of block to write.
       block_t* pBlock = fullQueue[fullTail];
       fullTail = queueNext(fullTail);
       // Write block to SD.
       uint32_t usec = micros();
       if (!sd.card()->writeData((uint8_t*)pBlock)) {
-        error("write data failed");
+        error(F("write data failed"));
       }
       usec = micros() - usec;
       t1 = millis();
@@ -612,7 +636,9 @@ void logData() {
       emptyHead = queueNext(emptyHead);
       bn++;
       if (bn == FILE_BLOCK_COUNT) {
+         Serial.println(F("bn == FILE_BLOCK_COUNT"));
         // File full so stop
+        closeFile = true;
         break;
       }
     }
@@ -620,10 +646,13 @@ void logData() {
   if (!sd.card()->writeStop()) {
     error("writeStop failed");
   }
+  digitalWrite(ERROR_LED_PIN, LOW);
   // Truncate file if recording stopped early.
   if (bn != FILE_BLOCK_COUNT) {
     Serial.println(F("Truncating file"));
-    if (!binFile.truncate(512L * bn)) {
+    Serial.print(F("uint32_t(512 * bn)"));
+    Serial.println(uint32_t(512 * bn));
+    if (!binFile.truncate(uint32_t(512 * bn))) {
       error("Can't truncate file");
     }
   }
@@ -682,8 +711,8 @@ void setup(void) {
   Serial1.flush();
   Serial1.end();
   Serial.println("Setting GPS to 57600 baud... ");
+  delay(300);
   Serial1.begin(57600);
-  //delay(300);
   Serial1.println("$PMTK251,57600*2C"); //Set Baud Rate to 57600
 
   Serial.println("Setting GPS to update at 5 Hz... ");

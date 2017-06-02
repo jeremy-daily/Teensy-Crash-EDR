@@ -1,4 +1,4 @@
-/*
+/* ANSWER
  * Hands-On Heavy Duty Protocols
  * 
  * Arduino Sketch to test the ability to receive CAN messages
@@ -66,7 +66,6 @@ unsigned long int rxCount = 0;
 elapsedMillis LEDtoggleTimer;
 elapsedMillis CANRXTimer;
 
-
 //Keep track of the LED states
 boolean ledState = false;
 boolean redLEDstate = false;
@@ -87,10 +86,10 @@ void setup() {
   Serial.println(F("Teensy 3.6 CAN Receive Test.")); //stores static text in the larger flash memory instead of the program stack. 
 
   //print a header to understand the displayed data.
-  Serial.print(F("uSec ID DLC"));
+  Serial.print(F("Count\tuSec\tID\tDLC"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[7]; //declare a byte display array
-    sprintf(byteDigits," B%i",i);
+    sprintf(byteDigits,"\tB%i",i);
     Serial.print(byteDigits); 
   }
   Serial.println();
@@ -104,17 +103,25 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   if(CANbus.read(rxmsg)){
+    rxCount++;
+    CANRXTimer = 0; //reset the timer since the last CAN message was received.
+    
+    //add these to toggle the LEDs when a message arrives.
+    redLEDstate = !redLEDstate;
+    greenLEDstate = !greenLEDstate;
+    digitalWrite(redLEDpin, redLEDstate); 
+    digitalWrite(greenLEDpin, greenLEDstate); 
     
     uint32_t ID = rxmsg.id;
     uint8_t len = rxmsg.len;
     
     char timeCountIDandDLCdigits[40]; 
-    sprintf(timeCountIDandDLCdigits,"%10i %08X %1i",micros(),ID,len);
+    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%10i\t%1i",rxCount,micros(),ID,len);
     Serial.print(timeCountIDandDLCdigits); 
       
     for (uint8_t i = 0; i<len;i++){ 
       char byteDigits[12]; 
-      sprintf(byteDigits," %02X",rxmsg.buf[i]);
+      sprintf(byteDigits,"\t%3i",rxmsg.buf[i]);
       Serial.print(byteDigits); 
     }
     Serial.println();
@@ -125,4 +132,8 @@ void loop() {
     ledState = !ledState; // Toggle values
     digitalWrite(LED_BUILTIN,ledState);
   }
+
+  if (CANRXTimer > 200) digitalWrite(greenLEDpin,LOW); //Turn off the LED if no CAN traffic is present.
+
+  
 }

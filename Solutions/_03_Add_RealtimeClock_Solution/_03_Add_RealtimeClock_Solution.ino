@@ -1,16 +1,13 @@
 /*
  * Hands-On Heavy Duty Protocols
  * 
- * Arduino Sketch to read data from CAN and display it on a serial port
- * Include the realtime clock functions inspired by the TimeTeensy3.ino example
- * 
- * Add capability to send request messages on J1939
+ * Arduino Sketch to include real time stamps to received CAN messages
  * 
  * Written By Dr. Jeremy S. Daily
  * The University of Tulsa
  * Department of Mechanical Engineering
  * 
- * 19 December 2016
+ * 29 September 2016
  * 
  * Released under the MIT License
  *
@@ -37,34 +34,20 @@
  * This sketch was inspired buy the realtime clock functions inspired by the TimeTeensy3.ino example
  * 
  * Assignment:
- * 1. Add at least 5 new requests for J1939 PGNs that are on request only.   
- * 
- * 2. Add a serial display line with the Transmit buffer contents. Indicate TX or RX on the displayed line.
- *
+ * 1. Set the time of the Teensy 3.6 by sending the formatted time string from the PC
+ *    using the python time setting script. 
+ * 2. Display the difference in microseconds between each CAN message.   
  */
 
-
-//Include the CAN libraries for the Teensy microprocessor
+//Include the CAN libraries for the Teensy 3.6 microprocessor
 #include <FlexCAN.h>
 #include <kinetis_flexcan.h>
 
 #include <TimeLib.h>
 
-const uint16_t PGNRequestList[7] = {
-  65261, // Cruise Control/Vehicle Speed Setup
-  65214, // Electronic Engine Controller 4
-  65259, // Component Identification
-  65242, // Software Identification
-  65244, // Idle Operation
-  65260, // Vehicle Identification
-  65255, // Vehicle Hours
-
-};
-
-uint8_t pgnIndex = 0;
 
 //Declare which pin is connected to the LED
-//Use the Teensy Reference Card and the board schematics to determine the pin number
+//Use the Teensy Reference Card and the board schematics to determine the pin number.
 const uint8_t redLEDpin = 5;
 const uint8_t greenLEDpin = 14;
 
@@ -73,23 +56,17 @@ FlexCAN CANbus(250000);
 
 //Set up the CAN data structure
 static CAN_message_t rxmsg;
-static CAN_message_t txmsg; //Add another data structure
 
-//set up a counter for each message
+//set up a counter for each received message
 unsigned long int rxCount = 0;
-uint32_t txCount = 0;
 
-//set up a timer to toggle the LEDs so the delay function isn't needed.
-elapsedMillis LEDtoggleTimer;
+elapsedMillis LEDtoggleTimer; //set up a timer to toggle the LEDs so the delay function isn't needed.
 elapsedMillis CANRXTimer; //Keep track of how long its been since a CAN message was received
 elapsedMillis displayTimer; //Only display data every so often.
-elapsedMillis requestTimer; //The count of milliseconds between each request
 
 //Keep track of microseconds
 elapsedMicros microsecondsPerSecond;
 elapsedMicros microsBetweenMessages;
-
-const int millisBetweenRequests = 100;
 
 //Keep track of the LED states
 boolean ledState = false;
@@ -99,7 +76,6 @@ boolean greenLEDstate = true;
 
 void setup() {
   // put your setup code here, to run once:
-
   pinMode(redLEDpin, OUTPUT);
   pinMode(greenLEDpin, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -108,10 +84,10 @@ void setup() {
   digitalWrite(LED_BUILTIN,ledState);
   digitalWrite(redLEDpin, redLEDstate); 
   digitalWrite(greenLEDpin, greenLEDstate); 
-  
+
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Send Request Messages"));
+  Serial.println(F("Teensy 3.6 CAN Receive Test with Real Time Clock."));
   
   // set the Time library to use Teensy 3.0's RTC to keep time
   setSyncProvider(getTeensy3Time);
@@ -126,39 +102,27 @@ void setup() {
   char timeString[32];
   sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
   Serial.println(timeString);
-    
+  
   //start the CAN access
   CANbus.begin();
   rxmsg.timeout = 0;
-  txmsg.timeout = 0;
-
   
-  //try to wait for the Serial bus to come up for 1 second
-  delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Receive Test with Request Messages."));
-  
-  //Set System Time
-  if (timeStatus()!= timeSet) {
-    Serial.println(F("Unable to sync with the RTC"));
-  } 
-  else {
-    Serial.println(F("RTC has set the system time"));
-  }
-  
-   //print a header
-  Serial.print(F("     Count     micros YYYY-MM-DD HH:MM:SS.usec dT(us)   CAN ID DLC"));
+  //print a header
+  Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.usec\tdT(us)\t  CAN ID\tDLC"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[4]; //declare a byte display array
-    sprintf(byteDigits," B%i",i);
+    sprintf(byteDigits,"\tB%i",i);
     Serial.print(byteDigits); 
   }
 
+  
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
 
-   // Synchronize the RTC to your PC time.
+  
+  // Synchronize the RTC to your PC time.
     if (Serial.available()) {
       time_t t = processSyncMessage();
       if (t != 0) {
@@ -181,12 +145,12 @@ void loop() {
     uint8_t len = rxmsg.len;
     
     char timeCountIDandDLCdigits[50]; 
-    sprintf(timeCountIDandDLCdigits,"%10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
+    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%04i-%02i-%02iT%02i:%02i:%02i.%06i\t%6i\t%08X\t%1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
     Serial.print(timeCountIDandDLCdigits); 
       
     for (uint8_t i = 0; i<len;i++){ 
       char byteDigits[4]; 
-      sprintf(byteDigits," %02X",rxmsg.buf[i]);
+      sprintf(byteDigits,"\t%02X",rxmsg.buf[i]);
       Serial.print(byteDigits); 
     }
     Serial.println();
@@ -203,38 +167,12 @@ void loop() {
 
   if (CANRXTimer > 200) digitalWrite(greenLEDpin,LOW); //Turn off the LED if no CAN traffic is present.
 
-
-
-
-  if (requestTimer >= millisBetweenRequests) {
-    requestTimer = 0;
-    uint16_t pgnToRequest = PGNRequestList[pgnIndex];
-    pgnIndex++;
-    if (pgnIndex > sizeof(PGNRequestList) ) pgnIndex = 0;
-
-  
-    txmsg.ext = 1;
-    txmsg.id = 0x18EA00F9; //request PGN
-    txmsg.len = 3;
-    txmsg.buf[0] = (pgnToRequest & 0x0000FF);
-    txmsg.buf[1] = (pgnToRequest & 0x00FF00) >> 8 ;
-    txmsg.buf[2] = (pgnToRequest & 0xFF0000) >> 16;
-    CANbus.write(txmsg);
-    txCount++;
-   
-    microsBetweenMessages=0;
-  
-  }
-  
-
-  
 }
 
 time_t getTeensy3Time(){
   microsecondsPerSecond = 0; //If this function gets called every second, then this can keep track of microseconds 
   return Teensy3Clock.get();
 }
-
 
 /*  code to process time sync messages from the serial port   */
 #define TIME_HEADER  "T"   // Header tag for serial time sync message

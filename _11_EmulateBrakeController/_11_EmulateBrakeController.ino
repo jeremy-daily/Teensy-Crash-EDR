@@ -1,13 +1,15 @@
 /*
  * Hands-On Heavy Duty Protocols
  * 
- * Arduino Sketch to test the ability to receive CAN messages
+ * Arduino Sketch to emulate the J1939 messages from an electronic brake controller
+ * 
+ * Add capability to send request messages on J1939
  * 
  * Written By Dr. Jeremy S. Daily
  * The University of Tulsa
  * Department of Mechanical Engineering
  * 
- * 17 December 2016
+ * 19 December 2016
  * 
  * Released under the MIT License
  *
@@ -29,100 +31,121 @@
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * SOFTWARE.//Reading data from CAN and displaying it on a serial port
  * 
+ * This sketch was inspired buy the realtime clock functions inspired by the TimeTeensy3.ino example
  * 
- * Assignment: 
- * 1. Install the FlexCAN2 library by selecting Sketch -> Include Library -> Add Zip Library
- *    Select the FlexCAN2 directory from the libraries folder. This must be done before
- *    this sketch will compile. (Note: the original FlexCAN library will work too).
- * 2. Add the ability to keep track of the number of received messages and display it.
- * 3. Toggle the LEDs each time a message arrives. 
- * 4. Change the output to be in decimal (instead of Hex)
- * 5. Make the data tab separated. 
+ * Assignment:
+ * 1. Add at least 5 new requests for J1939 PGNs that are on request only.   
  * 
+ * 2. Add a serial display line with the Transmit buffer contents. Indicate TX or RX on the displayed line.
+ *
  */
 
-//Include the CAN libraries for the Teensy 3.6 microprocessor
+
+//Include the CAN libraries for the Teensy microprocessor
 #include <FlexCAN.h>
 #include <kinetis_flexcan.h>
 
-
 //Declare which pin is connected to the LED
-//Use the Teensy Reference Card and the board schematics to determine the pin number.
+//Use the Teensy Reference Card and the board schematics to determine the pin number
 const uint8_t redLEDpin = 5;
 const uint8_t greenLEDpin = 14;
+const uint8_t J1708RXpin = 22;
 
 //initiate the CAN library at 250kbps
 FlexCAN CANbus(250000);
 
 //Set up the CAN data structure
 static CAN_message_t rxmsg;
+static CAN_message_t txmsg; //Add another data structure
 
-//set up a counter for each received message
+//set up a counter for each message
 unsigned long int rxCount = 0;
+uint32_t txCount = 0;
 
 //set up a timer to toggle the LEDs so the delay function isn't needed.
 elapsedMillis LEDtoggleTimer;
-elapsedMillis CANRXTimer;
+elapsedMillis CANRXTimer; //Keep track of how long its been since a CAN message was received
+elapsedMillis displayTimer; //Only display data every so often.
+elapsedMillis hundredMillisTimer; //keep track of the time elapese between broadcasting 100ms messages
 
+
+const int millisBetweenRequests = 100;
 
 //Keep track of the LED states
 boolean ledState = false;
 boolean redLEDstate = false;
 boolean greenLEDstate = true;
 
+
 void setup() {
   // put your setup code here, to run once:
   pinMode(redLEDpin, OUTPUT);
   pinMode(greenLEDpin, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
-  
-  //start the CAN access
-  CANbus.begin();
-  rxmsg.timeout = 0; 
-  
-  //try to wait for the Serial bus to come up for 1 second
-  delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Receive Test.")); //stores static text in the larger flash memory instead of the program stack. 
-
-  //print a header to understand the displayed data.
-  Serial.print(F("uSec ID DLC"));
-  for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
-    char byteDigits[7]; //declare a byte display array
-    sprintf(byteDigits," B%i",i);
-    Serial.print(byteDigits); 
-  }
-  Serial.println();
 
   //Set the LED display values.
   digitalWrite(LED_BUILTIN,ledState);
   digitalWrite(redLEDpin, redLEDstate); 
   digitalWrite(greenLEDpin, greenLEDstate); 
+  
+  CANbus.begin();
+  rxmsg.timeout = 0;
+  txmsg.timeout = 0;
+
+  txmsg.ext = 1;
+  txmsg.len = 8;
+  memset(txmsg.buf,0xFF,8);
+  
+  Serial1.begin(9600);
+  Serial1.setRX(27);
+  Serial1.setTX(26);
+  pinMode(J1708RXpin,INPUT);
+  
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+
   if(CANbus.read(rxmsg)){
-    
-    uint32_t ID = rxmsg.id;
-    uint8_t len = rxmsg.len;
-    
-    char timeCountIDandDLCdigits[40]; 
-    sprintf(timeCountIDandDLCdigits,"%10i %08X %1i",micros(),ID,len);
-    Serial.print(timeCountIDandDLCdigits); 
-      
-    for (uint8_t i = 0; i<len;i++){ 
-      char byteDigits[12]; 
-      sprintf(byteDigits," %02X",rxmsg.buf[i]);
-      Serial.print(byteDigits); 
-    }
-    Serial.println();
+    rxCount++;
+    CANRXTimer = 0; //reset the timer since the last CAN message was received.
+    //add these to toggle the LEDs when a message arrives.
+    greenLEDstate = !greenLEDstate;
+    digitalWrite(greenLEDpin, greenLEDstate);  
   }
+
+  digitalWrite(redLEDpin,!digitalRead(J1708RXpin)); 
   
-  if (LEDtoggleTimer >=500){ //Use this LED to provide feedback to the user that the loop is running. 
+  if (LEDtoggleTimer >=500){
     LEDtoggleTimer = 0; //reset the timer
     ledState = !ledState; // Toggle values
     digitalWrite(LED_BUILTIN,ledState);
+  }
+
+  if (CANRXTimer > 200) digitalWrite(greenLEDpin,LOW); //Turn off the LED if no CAN traffic is present.
+
+
+  if (hundredMillisTimer >= 100){
+    hundredMillisTimer = 0;
+    
+//    txmsg.id = 0x18F0010B; //EBC1 J1939 message
+//    CANbus.write(txmsg);
+//    txCount++;
+//    
+//    txmsg.id = 0x18FEF117; //CCVS J1939 message from Instrument Cluster
+//    CANbus.write(txmsg);
+//    txCount++;
+//    
+//    txmsg.id = 0x18FEBF0B; //EBC2 J1939 message
+//    CANbus.write(txmsg);
+//    txCount++;
+  }
+  if (Serial1.available()){
+    byte c = Serial1.read();
+    char byteDigits[6];
+    sprintf(byteDigits,"%02X ",c);
+    Serial.print(byteDigits);
   }
 }

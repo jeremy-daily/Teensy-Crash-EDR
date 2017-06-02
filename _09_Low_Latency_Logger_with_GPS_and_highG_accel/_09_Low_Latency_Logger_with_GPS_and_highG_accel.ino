@@ -1,3 +1,5 @@
+
+
 /**
  * This program logs data to a binary file.  Functions are included
  * to convert the binary file to a csv text file.
@@ -14,66 +16,176 @@
  * Data is written to the file using a SD multiple block write command.
  */
 // log file base name.  Must be five characters or less.
-#define FILE_BASE_NAME "NMFTA"
+#define FILE_BASE_NAME "DATA"
+
+
  
 #include <SPI.h>
 #include <SdFat.h>
 #include <SdFatUtil.h>
 #include <FlexCAN.h>
 #include <TimeLib.h>
+#include <TinyGPS.h>
+#include <SparkFun_ADXL345.h>         
 
+
+
+#define numBaudRates 4
+uint32_t baudRateList[numBaudRates] = {250000,500000,125000,1000000}; 
+uint32_t baudrate = 250000; //default (may be overwritten with autobaud detection)
+
+TimeElements tm;
+time_t GPStime = 0;   
 //------------------------------------------------------------------------------
 // User data functions.  Modify these functions for your data items.
 #include "UserDataType.h"  // Edit this include file to change data_t.
 
-FlexCAN CANbus(250000);
-static CAN_message_t rxmsg;
+const int tzoffset = -5;   // Central Time
+
+//static CAN_message_t rxmsg,txmsg;
 
 IntervalTimer oneSecondReset;
 elapsedMicros microsecondsPerSecond;
+elapsedMicros highGsampleTimer;
+
 elapsedMillis buttonPressTimer;
+elapsedMillis GPSsampleTimer;
+elapsedMillis LEDblinkTimer;
+elapsedMillis autobaudTimeout;
+
+TinyGPS gps;
+
+boolean gpsEncoded;
+
+boolean LEDstate;
+
+
+// accel chip select pin.
+const uint8_t ACCEL_CS_PIN = 6;
+//
+// Digital pin to indicate an error, set to -1 if not used.
+// The led blinks for fatal errors. The led goes on solid for SD write
+// overrun errors and logging continues.
+const uint8_t ERROR_LED_PIN = 21;
+
+const uint8_t BUTTON_PIN = 17;
+
+ADXL345 adxl = ADXL345(ACCEL_CS_PIN);   
+
 
 void resetMicros() {
   microsecondsPerSecond = 0; //reset the timer
 }
 
 // Acquire a data record.
-void acquireData(data_t* data) {
-  
-  if ( CANbus.read(rxmsg)){
-    data->timeStamp = now();
-    data->usec = uint32_t(microsecondsPerSecond);
-    data->ID = rxmsg.id;
-    data->DLC = rxmsg.len;
-    memset(data->dataField,0xFF,8);
-    for (uint8_t i = 0; i < rxmsg.len; i++){
-      data->dataField[i] = rxmsg.buf[i];  
-    }
+void acquireCANData(data_t* data) {
+  CAN_message_t rxmsg;
+  Can0.read(rxmsg);
+  data->timeStamp = now();
+  data->usec = uint32_t(microsecondsPerSecond);
+  data->type = 0;
+  data->ID = ( 0x00 << 24 ) | rxmsg.id; // let the first byte in the ID data word to be 0 if this is GPS data.
+  Serial.println(rxmsg.id,HEX);
+  data->DLC = rxmsg.len;
+  memset(data->dataField,0xFF,8);
+  for (uint8_t i = 0; i < rxmsg.len; i++){
+    data->dataField[i] = rxmsg.buf[i];  
   }
 }
 
+
+
+void acquireGPSData(data_t* data) {
+  int GPSyear;
+  byte GPSmonth, GPSday, GPShour, GPSminute, GPSsecond, GPShundredths;
+  unsigned long GPSage;
+  do{
+    if (Serial1.available()) gps.encode(Serial1.read());
+    gps.crack_datetime(&GPSyear, &GPSmonth, &GPSday, &GPShour, &GPSminute, &GPSsecond, &GPShundredths, &GPSage);
+//    Serial.print(GPShour);
+//    Serial.print(":");
+//    Serial.print(GPSminute);
+//    Serial.print(":");
+//    Serial.print(GPSsecond);
+//    Serial.print(" ");
+//    Serial.print(GPSday);
+//    Serial.print("-");
+//    Serial.print(GPSmonth);
+//    Serial.print("-");
+//    Serial.print(GPSyear); 
+//    Serial.println(); 
+    tm.Second = GPSsecond;
+    tm.Minute = GPSminute;
+    tm.Hour = GPShour;
+    tm.Day = GPSday;
+    tm.Month = GPSmonth;
+    tm.Year = GPSyear-1970;
+    GPStime = makeTime(tm);
+  } while (GPStime < 1471842557); //
+  
+  int32_t latitude;
+  int32_t longitude;
+  uint32_t fix_age;
+  gps.get_position(&latitude,&longitude,&fix_age);
+  data->timeStamp = now();
+  data->usec = latitude; //Millionths of a degree
+  data->type = 1;
+  data->ID = GPStime; 
+  data->DLC = longitude;
+  data->dataField[0] = (0xFF00 & gps.speed())>>8;
+  data->dataField[1] = 0xFF & gps.speed();
+  data->dataField[2] = (0xFF00 & gps.course()) >> 8;
+  data->dataField[3] = 0xFF & gps.course();
+  data->dataField[4] = (0xFF00 & gps.altitude()) >> 8;
+  data->dataField[5] = 0xFF & gps.altitude();
+  data->dataField[6] = gps.hdop();
+  data->dataField[7] = gps.satellites();
+}
+
+void acquireHighGData(data_t* data) {
+  int x,y,z;   
+  adxl.readAccel(&x, &y, &z);
+  data->timeStamp = now();
+  data->usec = uint32_t(microsecondsPerSecond);
+  data->type = 2;
+  data->ID = 0; 
+  data->DLC = 0;
+  data->dataField[0] = (0xFF00 & x)>>8;
+  data->dataField[1] = 0xFF & x;
+  data->dataField[2] = (0xFF00 & y) >> 8;
+  data->dataField[3] = 0xFF & y;
+  data->dataField[4] = (0xFF00 & z) >> 8;
+  data->dataField[5] = 0xFF & z;
+  data->dataField[6] = 0xFF;
+  data->dataField[7] = 0xFF;
+}
+
+
 // Print a data record.
 void printData(Print* pr, data_t* data) {
-
-  time_t recordTime = data->timeStamp;
-  char timeString[22];
-  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d,",year(recordTime),month(recordTime),day(recordTime),hour(recordTime),minute(recordTime),second(recordTime),data->usec);
-  pr->print(timeString);
-  
-  sprintf(timeString,"%10d.%06d",data->timeStamp,data->usec);
-  pr->print(timeString);
-  
-  
-  char IDString[11];
-  sprintf(IDString,",%08X,",data->ID);
-  pr->print(IDString);
-  pr->print(data->DLC);
-  for (int i = 0; i < 8; i++) {
-    char entry[4];
-    sprintf(entry,",%02X",data->dataField[i]);
-    pr->print(entry);
+  int type = data->type;
+  if (type == 0 || type ==1 ||type ==2){
+    time_t recordTime = data->timeStamp;
+    char timeString[100];
+    sprintf(timeString,"%04d-%02d-%02d,%02d:%02d:%02d.%06d,",year(recordTime),month(recordTime),day(recordTime),hour(recordTime),minute(recordTime),second(recordTime),data->usec);
+    pr->print(timeString);
+    
+    sprintf(timeString,"%10d.%06d",data->timeStamp,data->usec);
+    pr->print(timeString);
+    
+    
+    char IDString[12];
+    sprintf(IDString,",%08X,",data->ID);
+    pr->print(IDString);
+    pr->print(data->DLC);
+    for (int i = 0; i < 8; i++) {
+      char entry[5];
+      sprintf(entry,",%02X",data->dataField[i]);
+      pr->print(entry);
+    }
+    pr->println();
   }
-  pr->println();
+  
 }
 
 // Print data header.
@@ -92,19 +204,13 @@ void printHeader(Print* pr) {
 // Start of configuration constants.
 //==============================================================================
 //Interval between data records in microseconds.
-const uint32_t LOG_INTERVAL_USEC = 100;
+const uint32_t LOG_INTERVAL_USEC = 250;
 //------------------------------------------------------------------------------
 // Pin definitions.
 //
 // SD chip select pin.
 const uint8_t SD_CS_PIN = 15;
-//
-// Digital pin to indicate an error, set to -1 if not used.
-// The led blinks for fatal errors. The led goes on solid for SD write
-// overrun errors and logging continues.
-const uint8_t ERROR_LED_PIN = 21;
 
-const uint8_t BUTTON_PIN = 17;
 //------------------------------------------------------------------------------
 // File definitions.
 //
@@ -114,7 +220,8 @@ const uint8_t BUTTON_PIN = 17;
 // truncated if logging is stopped early.
 //const uint32_t FILE_BLOCK_COUNT = 256000;
 //const uint32_t FILE_BLOCK_COUNT = 2097152; //1 GB
-const uint32_t FILE_BLOCK_COUNT = 8388607; //4 GB - 512
+const uint32_t FILE_BLOCK_COUNT = 4194304; //2 GB
+//const uint32_t FILE_BLOCK_COUNT = 8388607; //4 GB - 512
 
 
 
@@ -152,11 +259,12 @@ const uint8_t BUFFER_BLOCK_COUNT = 12;
 // Size of file base name.  Must not be larger than six.
 const uint8_t BASE_NAME_SIZE = sizeof(FILE_BASE_NAME) - 1;
 
-SdFat sd;
 
+
+SdFat sd;
 SdBaseFile binFile;
 
-char binName[13] = FILE_BASE_NAME "00.bin";
+char binName[13] = FILE_BASE_NAME "000.bin";
 
 // Number of data records in a block.
 const uint16_t DATA_DIM = (512 - 4)/sizeof(data_t);
@@ -170,6 +278,60 @@ struct block_t {
   data_t data[DATA_DIM];
   uint8_t fill[FILL_DIM];
 };
+
+/*
+ * ------------------------------------------------------------------------------
+ * Function: getBaudRate
+ * 
+ * returns one of the predefined CAN bauds rates
+ * 
+ * This function will always run until a CAN message is received. Therefore, the first messages may not be captured if
+ * the program starts on a live bus. 
+*/
+uint32_t getBaudRate() {
+  digitalWrite(LED_BUILTIN,HIGH);
+  CAN_filter_t allPassFilter;
+  allPassFilter.ext=1;
+      
+  autobaudTimeout = 0;
+  while (autobaudTimeout < 1000){
+ 
+    //processSetTimeUtility();
+    for(uint8_t i=0;i<numBaudRates;i++){
+      uint32_t baudrate = baudRateList[i];
+      Serial.print(F("Trying Baudrate of "));
+      Serial.println(baudrate);
+      //Serial.println(F("Beginning test."));
+      Can0.begin(baudrate);
+      //The default filters exclude the extended IDs, so we have to set up CAN filters to allow those to pass.
+      for (uint8_t filterNum = 8; filterNum < 16;filterNum++){ //only use half the available filters for the extended IDs
+        Can0.setFilter(allPassFilter,filterNum); 
+      }
+       delay(110);
+      if(Can0.available()){
+        Serial.print("Baudrate is confirmed to be ");
+        Serial.println(baudrate);
+        digitalWrite(LED_BUILTIN,LOW);
+        return baudrate;
+      }
+      else{
+       Can0.end();
+       delay(100);
+      }
+      Serial.println(F("Trying again."));
+     
+    }   
+  }
+  digitalWrite(LED_BUILTIN,LOW);
+  Serial.println(F("Setting Default Baudrate of 500000"));
+  baudrate =  500000;
+  Can0.begin(baudrate);
+  for (uint8_t filterNum = 8; filterNum < 16;filterNum++){ //only use half the available filters for the extended IDs
+        Can0.setFilter(allPassFilter,filterNum); 
+    }
+  return baudrate;
+}
+
 
 //------------------------------------------------------------------------------
 /*
@@ -219,6 +381,7 @@ void fatalBlink() {
       delay(80);
       digitalWrite(ERROR_LED_PIN, LOW);
       delay(80);
+      
     }
   }
 }
@@ -240,7 +403,7 @@ void binaryToCsv() {
   binFile.rewind();
   // Create a new csvFile.
   strcpy(csvName, binName);
-  strcpy(&csvName[BASE_NAME_SIZE + 3], "csv");
+  strcpy(&csvName[BASE_NAME_SIZE + 3], ".csv");
 
   if (!csvFile.open(csvName, O_WRITE | O_CREAT | O_TRUNC)) {
     error("open csvFile failed");
@@ -252,7 +415,8 @@ void binaryToCsv() {
   printHeader(&csvFile);
   uint32_t tPct = millis();
   while (!Serial.available() && binFile.read(&block, 512) == 512) {
-    
+     if (Serial1.available()) gps.encode(Serial1.read());
+  
     uint16_t i;
     if (block.count == 0) {
       break;
@@ -306,6 +470,8 @@ void checkOverrun() {
   Serial.println();
   Serial.println(F("Checking overrun errors - type any character to stop"));
   while (binFile.read(&block, 512) == 512) {
+    if (Serial1.available()) gps.encode(Serial1.read());
+  
     if (block.count == 0) {
       break;
     }
@@ -342,9 +508,11 @@ void dumpData() {
   binFile.rewind();
   Serial.println();
   Serial.println(F("Type any character to stop"));
-  delay(1000);
+  delay(100);
   printHeader(&Serial);
   while (!Serial.available() && binFile.read(&block , 512) == 512) {
+    if (Serial1.available()) gps.encode(Serial1.read());
+  
     if (block.count == 0) {
       break;
     }
@@ -364,7 +532,7 @@ void dumpData() {
 uint32_t const ERASE_SIZE = 262144L;
 void logData() {
   uint32_t bgnBlock, endBlock;
-
+  digitalWrite(ERROR_LED_PIN,HIGH);
   // Allocate extra buffer space.
   block_t block[BUFFER_BLOCK_COUNT];
   block_t* curBlock = 0;
@@ -375,16 +543,27 @@ void logData() {
     error("FILE_BASE_NAME too long");
   }
   while (sd.exists(binName)) {
-    if (binName[BASE_NAME_SIZE + 1] != '9') {
-      binName[BASE_NAME_SIZE + 1]++;
-    } else {
-      binName[BASE_NAME_SIZE + 1] = '0';
-      if (binName[BASE_NAME_SIZE] == '9') {
-        error("Can't create file name");
-      }
-      binName[BASE_NAME_SIZE]++;
+    if (binName[BASE_NAME_SIZE + 2] != '9') {
+      binName[BASE_NAME_SIZE + 2]++;
     }
+    else {
+      binName[BASE_NAME_SIZE + 2] = '0';
+      if (binName[BASE_NAME_SIZE + 1] != '9') {
+        binName[BASE_NAME_SIZE + 1]++;
+      } else {
+        binName[BASE_NAME_SIZE + 1] = '0';
+        if (binName[BASE_NAME_SIZE] == '9') {
+          error("Can't create file name");
+        }
+        binName[BASE_NAME_SIZE]++;
+      }
+    }
+    if (binName[BASE_NAME_SIZE] == '9' & binName[BASE_NAME_SIZE+1] == '9' & binName[BASE_NAME_SIZE+2] == '9') {
+        error("Can't create file name");
+    }
+  
   }
+   
   // Delete old tmp file.
   if (sd.exists(TMP_FILE_NAME)) {
     Serial.println(F("Deleting tmp file"));
@@ -440,6 +619,9 @@ void logData() {
     emptyQueue[emptyHead] = &block[i];
     emptyHead = queueNext(emptyHead);
   }
+
+  getBaudRate();
+  
   Serial.println(F("Logging - type any character to stop"));
   // Wait for Serial Idle.
   Serial.flush();
@@ -456,9 +638,10 @@ void logData() {
   uint32_t logTime = micros()/LOG_INTERVAL_USEC + 1;
   logTime *= LOG_INTERVAL_USEC;
   bool closeFile = false;
-  digitalWrite(ERROR_LED_PIN,HIGH);
+  //digitalWrite(ERROR_LED_PIN,HIGH);
   while (1) {
-    
+     if (Serial1.available()) gps.encode(Serial1.read());
+  
     // Time for next data record.
     //logTime += LOG_INTERVAL_USEC;
     if (Serial.available() || (!digitalRead(BUTTON_PIN) && buttonPressTimer>100) ) {
@@ -467,15 +650,25 @@ void logData() {
     }
 
     if (closeFile) {
+      Serial.println(F("Closing Temp Buffer File."));
+     // Serial.print("curBlock: ");
+     // Serial.println(curBlock);
+      Serial.print("curBlock->count: ");
+      Serial.println(curBlock->count);
+      
+      
       if (curBlock != 0 && curBlock->count >= 0) {
         // Put buffer in full queue.
         fullQueue[fullHead] = curBlock;
         fullHead = queueNext(fullHead);
+        Serial.print(F("Updated fullHead to "));
+        Serial.println(fullHead);
         curBlock = 0;
       }
     } 
     else {
       if (curBlock == 0 && emptyTail != emptyHead) {
+        //Serial.println(F("curBloc == 0 && emptyTail != emptyHead"));
         curBlock = emptyQueue[emptyTail];
         emptyTail = queueNext(emptyTail);
         curBlock->count = 0;
@@ -490,9 +683,38 @@ void logData() {
 //      }
       if (curBlock == 0) {
         overrun++;
-      } else {
-        acquireData(&curBlock->data[curBlock->count++]);
-        if (curBlock->count == DATA_DIM) {
+        Serial.print(F("Overrun: "));
+        Serial.println(overrun);
+      } 
+      else {
+        
+        if (Can0.available()) acquireCANData(&curBlock->data[curBlock->count++]);
+        
+        if (GPSsampleTimer >= 200){
+          GPSsampleTimer = 0; 
+          acquireGPSData(&curBlock->data[curBlock->count++]);
+        }
+
+        if (highGsampleTimer >= 310){///mircoseconds for 3200 Hz
+          highGsampleTimer = 0;
+          SPI.setDataMode(SPI_MODE3);
+          digitalWrite(SD_CS_PIN,HIGH);
+          acquireHighGData(&curBlock->data[curBlock->count++]);
+          digitalWrite(SD_CS_PIN,LOW);
+          SPI.setDataMode(SPI_MODE0);
+          
+        }
+        
+        if (LEDblinkTimer >= 500){
+          LEDblinkTimer = 0; 
+          LEDstate = !LEDstate;
+          digitalWrite(ERROR_LED_PIN,LEDstate);
+        }
+
+        
+         
+        if (curBlock->count >= DATA_DIM) {
+          //Serial.println(F("curBlock->count >= DATA_DIM"));
           fullQueue[fullHead] = curBlock;
           fullHead = queueNext(fullHead);
           curBlock = 0;
@@ -501,18 +723,20 @@ void logData() {
     }
 
     if (fullHead == fullTail) {
+      //Serial.println(F("fullHead == fullTail"));
       // Exit loop if done.
       if (closeFile) {
         break;
       }
     } else if (!sd.card()->isBusy()) {
+      //Serial.println(F("!sd.card()->isBusy()"));
       // Get address of block to write.
       block_t* pBlock = fullQueue[fullTail];
       fullTail = queueNext(fullTail);
       // Write block to SD.
       uint32_t usec = micros();
       if (!sd.card()->writeData((uint8_t*)pBlock)) {
-        error("write data failed");
+        error(F("write data failed"));
       }
       usec = micros() - usec;
       t1 = millis();
@@ -533,7 +757,9 @@ void logData() {
       emptyHead = queueNext(emptyHead);
       bn++;
       if (bn == FILE_BLOCK_COUNT) {
+         Serial.println(F("bn == FILE_BLOCK_COUNT"));
         // File full so stop
+        closeFile = true;
         break;
       }
     }
@@ -541,10 +767,13 @@ void logData() {
   if (!sd.card()->writeStop()) {
     error("writeStop failed");
   }
+  digitalWrite(ERROR_LED_PIN, LOW);
   // Truncate file if recording stopped early.
   if (bn != FILE_BLOCK_COUNT) {
     Serial.println(F("Truncating file"));
-    if (!binFile.truncate(512L * bn)) {
+    Serial.print(F("uint32_t(512 * bn)"));
+    Serial.println(uint32_t(512 * bn));
+    if (!binFile.truncate(uint32_t(512UL * bn))) {
       error("Can't truncate file");
     }
   }
@@ -573,20 +802,28 @@ time_t getTeensy3Time()
 }
 
 void setup(void) {
-  CANbus.begin();
-  rxmsg.timeout = -1;
-
-  pinMode(6,OUTPUT);
-  digitalWrite(6,HIGH);
-  pinMode(BUTTON_PIN,INPUT_PULLUP);
-  
- pinMode(ERROR_LED_PIN, OUTPUT);
- 
   Serial.begin(9600);
   digitalWrite(ERROR_LED_PIN,HIGH);
   delay(1000);
   digitalWrite(ERROR_LED_PIN,LOW);
+ 
   
+  pinMode(BUTTON_PIN,INPUT_PULLUP);
+
+  pinMode(SD_CS_PIN,OUTPUT);
+  digitalWrite(SD_CS_PIN,HIGH);
+  //SPI.setDataMode(SPI_MODE3);
+  adxl.powerOn(); 
+  adxl.setRate(3200);
+  adxl.setSpiBit(0);                              
+  delay(100);
+  
+  adxl.printAllRegister();
+  delay(1);
+   
+  pinMode(ERROR_LED_PIN, OUTPUT);
+ 
+   
   setSyncProvider(getTeensy3Time);
   if (timeStatus()!= timeSet) {
     Serial.println("Unable to sync with the RTC");
@@ -594,12 +831,53 @@ void setup(void) {
     Serial.println("RTC has set the system time");
   }
 
+  Serial.print("Starting GPS... ");
+  //tft.println("Starting GPS");
+  Serial1.begin(9600);
+  delay(300);
+  Serial1.println("$PMTK251,57600*2C"); //Set Baud Rate to 57600
+  delay(100);
+  Serial1.flush();
+  Serial1.end();
+  Serial.println("Setting GPS to 57600 baud... ");
+  delay(300);
+  Serial1.begin(57600);
+  Serial1.println("$PMTK251,57600*2C"); //Set Baud Rate to 57600
+
+  Serial.println("Setting GPS to update at 5 Hz... ");
+  Serial1.println("$PMTK220,200*2C"); //update at 5 Hz
+  delay(100);
+  Serial1.println("$PMTK300,200,0,0,0,0*2F"); //position fix update to 5 Hz
+  for (int i = 0; i < 100; i++) {
+    if (Serial1.available()) Serial.write(Serial1.read());
+  }
+  Serial.println("\nDone.");
   
-  char timeString[22];
-  time_t previousTime = now();
-  while (now() - previousTime < 1) resetMicros();
-  oneSecondReset.begin(resetMicros,1000000);
+  setSyncProvider(getTeensy3Time);
+  if (timeStatus()!= timeSet) {
+    Serial.println("Unable to sync with the RTC");
+  } else {
+    Serial.println("RTC has set the system time");
+  }
+  setSyncInterval(1);
+  char timeString[32];
+  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
+  Serial.println(timeString);
   
+  baudrate = getBaudRate(); //comment this line out to accept the default
+  
+
+  SdFile baudFile;
+  baudFile.open("baudRate.txt", O_RDWR | O_CREAT | O_AT_END);
+  baudFile.println(timeString);
+  
+  baudFile.close();
+  
+  Serial.println("Wrote Baudrate to a file.");
+  
+ //  while (now() - previousTime < 1) resetMicros();
+//  oneSecondReset.begin(resetMicros,1000000);
+//  
   sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
   Serial.println(timeString);
   
@@ -617,6 +895,12 @@ void setup(void) {
   }
   // set date time callback function
   SdFile::dateTimeCallback(dateTime);
+ 
+  truncateTempfiles();
+
+  
+  
+ 
 
 //  logData(); //uncomment to automatically start logging. Otherwise use the button
 }
@@ -625,7 +909,9 @@ void loop(void) {
   if (ERROR_LED_PIN >= 0) {
     digitalWrite(ERROR_LED_PIN, LOW);
   }
-  
+  pinMode(LED_BUILTIN,OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+
   // discard any input
   while (Serial.read() >= 0) {}
   
@@ -636,7 +922,8 @@ void loop(void) {
   Serial.println(F("e - overrun error details"));
   Serial.println(F("r - record data"));
 
-  while(!Serial.available() && digitalRead(BUTTON_PIN) );
+  while(!Serial.available() && digitalRead(BUTTON_PIN) )  if (Serial1.available()) gps.encode(Serial1.read());
+  
   buttonPressTimer = 0;
   delay(50); //debounce
   char c;
@@ -670,8 +957,151 @@ void loop(void) {
   digitalWrite(ERROR_LED_PIN, LOW);
   
   while (!digitalRead(BUTTON_PIN)){
+     if (Serial1.available()) gps.encode(Serial1.read());
+  
     if (ERROR_LED_PIN >= 0) {
       digitalWrite(ERROR_LED_PIN, LOW);
     }
   }//Wait to release the button;
 }
+
+void truncateTempfiles(){
+  digitalWrite(ERROR_LED_PIN,HIGH);
+  if (sd.exists(TMP_FILE_NAME)) {
+    Serial.println("Found exsiting temp file."); 
+    
+    SdBaseFile tempFile;
+ 
+    tempFile.open(TMP_FILE_NAME, O_RDWR);
+    
+    byte someBytes[4];
+    bool stillSearching = true;
+    uint32_t highIndex = FILE_BLOCK_COUNT;
+    uint32_t lowIndex = 0;
+    
+    tempFile.seekSet(0);
+    for (int j = 0;j<4;j++){
+      someBytes[j] = tempFile.read();
+    }
+    if (someBytes[0]==0xFF & someBytes[1]==0xFF & someBytes[2]==0xFF & someBytes[3]==0xFF){ // End is lower 
+      Serial.println("Zero length temp file encountered. Ignoring.");
+      if (!sd.remove(TMP_FILE_NAME)) {
+        error("Can't remove tmp file");
+      }
+      return;
+    }
+    
+    uint32_t fileIndex;
+    while (stillSearching){ // Use bisection search to find the end of the file.
+          fileIndex = (highIndex + lowIndex)/2;
+          tempFile.seekSet(fileIndex*512L);
+          for (int j = 0;j<4;j++){
+            someBytes[j] = tempFile.read();
+          }
+          
+          if (someBytes[0]==0xFF & someBytes[1]==0xFF & someBytes[2]==0xFF & someBytes[3]==0xFF){ // End is lower 
+            highIndex = highIndex - (highIndex - lowIndex)/2;
+          }
+          else{ // end is higher
+            lowIndex = lowIndex + (highIndex - lowIndex)/2;
+          }
+          if (highIndex - lowIndex < 2) stillSearching = false;
+    }
+    Serial.println("Trunating File.");
+    if (!tempFile.truncate(uint32_t(512L * fileIndex))){
+      error("Can't truncate file");
+    }
+    Serial.print("Truncated temp file to ");
+    Serial.println( uint32_t(512L * fileIndex));
+      
+ 
+  // Find unused file name.
+  if (BASE_NAME_SIZE > 5) {
+    error("FILE_BASE_NAME too long");
+  }
+  while (sd.exists(binName)) {
+    if (binName[BASE_NAME_SIZE + 2] != '9') {
+      binName[BASE_NAME_SIZE + 2]++;
+    }
+    else {
+      binName[BASE_NAME_SIZE + 2] = '0';
+      if (binName[BASE_NAME_SIZE + 1] != '9') {
+        binName[BASE_NAME_SIZE + 1]++;
+      }
+      else {
+        binName[BASE_NAME_SIZE+1] = '0';
+        binName[BASE_NAME_SIZE]++;
+      }
+    }
+    
+   if (binName[BASE_NAME_SIZE] == '9' & binName[BASE_NAME_SIZE+1] == '9' & binName[BASE_NAME_SIZE+2] == '9') {
+        error("Can't create file name");
+    }
+  }
+  Serial.print("Created new filename of ");
+  Serial.println(binName);
+  
+   
+  if (!tempFile.rename(sd.vwd(), binName)) {
+    error("Can't rename file");
+  }
+  
+  Serial.print(F("File renamed: "));
+  Serial.println(binName);
+
+  tempFile.close();
+
+  }
+
+}
+
+
+elapsedMillis displayCounter;
+
+void processSetTimeUtility(){
+//  if (gps.encode(Serial1.read())) { // process gps messages
+//      // when TinyGPS reports new data...
+//      unsigned long age;
+//      int Year;
+//      byte Month, Day, Hour, Minute, Second;
+//      gps.crack_datetime(&Year, &Month, &Day, &Hour, &Minute, &Second, NULL, &age);
+//      if (age < 500) {
+//        // set the Time to the latest GPS reading
+//        setTime(Hour, Minute, Second, Day, Month, Year);
+//        adjustTime(tzoffset * SECS_PER_HOUR);
+//        Teensy3Clock.set(now());
+//      }
+//    }
+    
+    if (Serial.available()) {
+    time_t t = processSyncMessage();
+    if (t != 0) {
+      Teensy3Clock.set(t); // set the RTC
+      setTime(t);
+    }
+  }
+  
+  if (displayCounter >=1000){
+    displayCounter = 0;
+    char timeStamp[35];
+    sprintf(timeStamp,"%04d-%02d-%02d %02d:%02d:%02d",year(),month(),day(),hour(),minute(),second());
+   // Serial.println(timeStamp);
+  }  
+}
+
+/*  code to process time sync messages from the serial port   */
+#define TIME_HEADER  "T"   // Header tag for serial time sync message
+const uint32_t DEFAULT_TIME = 1357041600; // Jan 1 2013 
+
+uint32_t processSyncMessage() {
+  uint32_t pctime = 0L;
+  
+  if(Serial.find(TIME_HEADER)) {
+     pctime = Serial.parseInt();
+     if( pctime < DEFAULT_TIME) { // check the value is a valid time (greater than Jan 1 2013)
+       pctime = 0L; // return 0 to indicate that the time is not valid
+     }
+  }
+  return pctime;
+}
+

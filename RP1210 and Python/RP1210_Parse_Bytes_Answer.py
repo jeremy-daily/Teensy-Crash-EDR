@@ -20,32 +20,33 @@ from   array import *
 from   time import *
 
 def interpretRP1210Fields (bufferAsBytes,nRetVal,protocol):
-	'''This function provides a way to separate out the bytes from a received RP1210 message.'''
-	if "J1939" in protocol:
-		timeStamp = int(struct.unpack('>L',(ucTxRxBuffer[0]+ucTxRxBuffer[1]+ucTxRxBuffer[2]+ucTxRxBuffer[3]))[0])
-		PGN       = int(struct.unpack('<L',(ucTxRxBuffer[4]+ucTxRxBuffer[5]+ucTxRxBuffer[6]+b'\x00'))[0])
-		HowSentAndPriority   =  int( struct.unpack( 'B', ucTxRxBuffer[7] )[0])
-		priority = int( HowSentAndPriority & 0x07)
-		HowSent  = int((HowSentAndPriority & 0x80) >> 7 )
-		SourceAddress      = struct.unpack( 'B', ucTxRxBuffer[8]   )[0]
-		DestinationAddress = struct.unpack( 'B', ucTxRxBuffer[9]   )[0]
-		
-		
-		nDataBytes = nRetVal - 10
-		print("J1939",end=",")
-		print("%10i" %timeStamp, end="," )
-		print(PGN, end="," )
-		print(priority, end="," )
-		print(HowSent, end="," )
-		print(SourceAddress, end="," )
-		print(DestinationAddress, end="" )
-		for ucByte in ucTxRxBuffer[10:nRetVal] :
-			print(",%02X" %ucByte, end="" )
-		print()
-	return 
-
-	
-	
+    '''This function provides a way to separate out the bytes from a received RP1210 message.'''
+    if "J1939" in protocol:
+        timeStamp = int(struct.unpack('>L',(ucTxRxBuffer[0]+ucTxRxBuffer[1]+ucTxRxBuffer[2]+ucTxRxBuffer[3]))[0])
+        PGN       = int(struct.unpack('<L',(ucTxRxBuffer[4]+ucTxRxBuffer[5]+ucTxRxBuffer[6]+b'\x00'))[0])
+        HowSentAndPriority   =  int( struct.unpack( 'B', ucTxRxBuffer[7] )[0])
+        priority = int( HowSentAndPriority & 0x07)
+        HowSent  = int((HowSentAndPriority & 0x80) >> 7 )
+        SourceAddress      = struct.unpack( 'B', ucTxRxBuffer[8]   )[0]
+        DestinationAddress = struct.unpack( 'B', ucTxRxBuffer[9]   )[0]
+        
+        
+        nDataBytes = nRetVal - 10
+        print("J1939",end=",")
+        print("%10i" %timeStamp, end="," )
+        print(PGN, end="," )
+        print(priority, end="," )
+        print(HowSent, end="," )
+        print(SourceAddress, end="," )
+        print(DestinationAddress, end="" )
+        for ucByte in ucTxRxBuffer[10:nRetVal] :
+                        print(",%02X" %ucByte, end="" )
+        print()
+        return (timeStamp,PGN,priority,SourceAddress,DestinationAddress,ucTxRxBuffer[10:nRetVal])
+    elif "J1708" in protocol:
+                pass
+    
+    
 #define the name of the RP1210 DLL
 dllName =   "DPA4PMA.DLL" 
 
@@ -148,16 +149,16 @@ ucTxRxBuffer = (c_char*2000)()
 NON_BLOCKING_IO = 0
 while True:
 
-	if msvcrt.kbhit():
-		break
-	
-	nRetVal = RP1210_ReadMessage( c_short( nClientID ), byref( ucTxRxBuffer ), c_short( 2000 ), c_short( NON_BLOCKING_IO ) )
-	if nRetVal > 0:
-		print("RAW", end=",")
-		print(ucTxRxBuffer[:nRetVal])
-		interpretRP1210Fields (ucTxRxBuffer, nRetVal, clientNames[nClientID])
-	
-	
+    if msvcrt.kbhit():
+        break
+    
+    nRetVal = RP1210_ReadMessage( c_short( nClientID ), byref( ucTxRxBuffer ), c_short( 2000 ), c_short( NON_BLOCKING_IO ) )
+    if nRetVal > 0:
+        print("RAW", end=",")
+        print(ucTxRxBuffer[:nRetVal])
+        interpretRP1210Fields (ucTxRxBuffer, nRetVal, clientNames[nClientID])
+    
+    
 # Disconnect from the VDA
 
 input("Press Enter to Quit.")

@@ -50,7 +50,7 @@
 
 #include <TimeLib.h>
 
-const uint16_t PGNRequestList[7] = {
+const uint16_t PGNRequestList[28] = {
   65261, // Cruise Control/Vehicle Speed Setup
   65214, // Electronic Engine Controller 4
   65259, // Component Identification
@@ -58,7 +58,26 @@ const uint16_t PGNRequestList[7] = {
   65244, // Idle Operation
   65260, // Vehicle Identification
   65255, // Vehicle Hours
-
+  65253, // Engine Hours, Revolutions
+  65257, // Fuel Consumption (Liquid)
+  65256, // Vehicle Direction/Speed
+  65254, // Time/Date
+  65211, // Trip Fan Information
+  65210, // Trip Distance Information
+  65209, // Trip Fuel Information (Liquid)
+  65207, // Engine Speed/Load Factor Information
+  65206, // Trip Vehicle Speed/Cruise Distance Information
+  65205, // Trip Shutdown Information
+  65204, // Trip Time Information 1
+  65200, // Trip Time Information 2
+  65250, // Transmission Configuration
+  65203, // Fuel Information (Liquid)
+  65201, // ECU History
+  65168, // Engine Torque History
+  64981, // Electronic Engine Controller 5
+  64978, // ECU Performance
+  64965, // ECU Identification Information
+  65165  // Vehicle Electrical Power #2
 };
 
 uint8_t pgnIndex = 0;
@@ -89,7 +108,7 @@ elapsedMillis requestTimer; //The count of milliseconds between each request
 elapsedMicros microsecondsPerSecond;
 elapsedMicros microsBetweenMessages;
 
-const int millisBetweenRequests = 100;
+const int millisBetweenRequests = 1000;
 
 //Keep track of the LED states
 boolean ledState = false;
@@ -111,8 +130,8 @@ void setup() {
   
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Send Request Messages"));
-  
+  Serial.println(F("Teensy 3.6 CAN Receive Test with Request Messages."));
+   
   // set the Time library to use Teensy 3.0's RTC to keep time
   setSyncProvider(getTeensy3Time);
   if (timeStatus()!= timeSet) {
@@ -135,7 +154,7 @@ void setup() {
   
   //try to wait for the Serial bus to come up for 1 second
   delay(1000);
-  Serial.println(F("Teensy 3.6 CAN Receive Test with Request Messages."));
+  Serial.println(F("Teensy 3.2 CAN Receive Test."));
   
   //Set System Time
   if (timeStatus()!= timeSet) {
@@ -146,7 +165,7 @@ void setup() {
   }
   
    //print a header
-  Serial.print(F("     Count     micros YYYY-MM-DD HH:MM:SS.usec dT(us)   CAN ID DLC"));
+  Serial.print(F("Dir      Count     micros YYYY-MM-DD HH:MM:SS.usec dT(us)   CAN ID DLC"));
   for (uint8_t i = 1; i<9;i++){ //label the byte columns according to J1939
     char byteDigits[4]; //declare a byte display array
     sprintf(byteDigits," B%i",i);
@@ -181,7 +200,7 @@ void loop() {
     uint8_t len = rxmsg.len;
     
     char timeCountIDandDLCdigits[50]; 
-    sprintf(timeCountIDandDLCdigits,"%10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
+    sprintf(timeCountIDandDLCdigits,"RX  %10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),ID,len);
     Serial.print(timeCountIDandDLCdigits); 
       
     for (uint8_t i = 0; i<len;i++){ 
@@ -221,7 +240,16 @@ void loop() {
     txmsg.buf[2] = (pgnToRequest & 0xFF0000) >> 16;
     CANbus.write(txmsg);
     txCount++;
-   
+    
+    char timeCountIDandDLCdigits[50]; 
+    sprintf(timeCountIDandDLCdigits," TX %10i %10i %04i-%02i-%02iT%02i:%02i:%02i.%06i %6i %08X %1i",txCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),int(microsBetweenMessages),txmsg.id,txmsg.len);
+    Serial.print(timeCountIDandDLCdigits); 
+    for (uint8_t i = 0; i<txmsg.len;i++){ 
+      char byteDigits[4]; 
+      sprintf(byteDigits," %02X",txmsg.buf[i]);
+      Serial.print(byteDigits); 
+    }
+    Serial.println();
     microsBetweenMessages=0;
   
   }

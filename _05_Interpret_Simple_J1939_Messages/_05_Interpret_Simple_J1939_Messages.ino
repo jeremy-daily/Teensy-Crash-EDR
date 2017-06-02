@@ -11,10 +11,15 @@
  * Author: Dr. Jeremy S. Daily
  * The University of Tulsa, Mechanical Engineering
  * 
- * Assignment: Adapt the code to elimnate all serial output commands
- * except for the value for vehicle speed. This data can be plotted on 
+ * Assignment: 
+ * 
+ * 1. Add at least 3 more J1939 PGNs to be interpreted. (eg. High Resolution Vehicle Distance, Vehicle Hours, Odometer)
+ * 
+ * 2. (optional) Adapt the code to elimnate all serial output commands
+ * except for the value for a parameter (like temperature). This data can be plotted on 
  * the Arduino Serial Plotter. Do this by commenting out Serial.print 
  * statements that are not needed. 
+ * 
  */
 //Include the CAN libraries for the Teensy microprocessor
 #include <FlexCAN.h>
@@ -22,29 +27,51 @@
 
 //Declare which pin is connected to the LED
 //Use the Teensy Reference Card and the board schematics to determine the pin number
-const int redLEDpin = 21;
+const uint8_t redLEDpin = 5;
+const uint8_t greenLEDpin = 14;
 
 //initiate the CAN library at 250kbps
 FlexCAN CANbus(250000);
 
 //Set up the CAN data structure
 static CAN_message_t rxmsg;
+static CAN_message_t txmsg; //Add another data structure
 
 //set up a counter for each received message
 unsigned long int rxCount = 0;
+uint32_t txCount = 0;
 
 //set up a timer to toggle the LEDs so the delay function isn't needed.
 elapsedMillis LEDtoggleTimer;
-elapsedMillis millisecondsPerSecond;
+elapsedMillis CANRXTimer; //Keep track of how long its been since a CAN message was received
+elapsedMillis displayTimer; //Only display data every so often.
+elapsedMillis requestTimer; //The count of milliseconds between each request
+
+//Keep track of microseconds
+elapsedMicros microsecondsPerSecond;
+elapsedMicros microsBetweenMessages;
+
+const int millisBetweenRequests = 1000;
 
 //Keep track of the LED state
-boolean ledState = true;
+boolean ledState = false;
+boolean redLEDstate = false;
+boolean greenLEDstate = true;
 
 //set up a variable to keep track of the timestamp
 time_t previousTime = 0;
 
 void setup() {
   // put your setup code here, to run once:
+  
+  pinMode(redLEDpin, OUTPUT);
+  pinMode(greenLEDpin, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  //Set the LED display values.
+  digitalWrite(LED_BUILTIN,ledState);
+  digitalWrite(redLEDpin, redLEDstate); 
+  digitalWrite(greenLEDpin, greenLEDstate); 
 
   // set the Time library to use Teensy 3.0's RTC to keep time
   setSyncProvider(getTeensy3Time);
@@ -52,29 +79,29 @@ void setup() {
   //declare the LED Pin to be the output
   pinMode(redLEDpin,OUTPUT);
   digitalWrite(redLEDpin,ledState); //Turn on the LED
+ 
+ //try to wait for the Serial bus to come up for 1 second
+  delay(1000);
+  Serial.println(F("Teensy 3.6 CAN Receive with J1939 Parsing."));
+ 
+   // set the Time library to use Teensy 3.0's RTC to keep time
+  setSyncProvider(getTeensy3Time);
+  if (timeStatus()!= timeSet) {
+    Serial.println(F("Unable to sync with the RTC"));
+  } else {
+    Serial.println(F("RTC has set the system time"));
+  }
+  setSyncInterval(1);
 
-  pinMode(A14,INPUT);
-  
+  //Display current time. 
+  char timeString[32];
+  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
+  Serial.println(timeString);
+    
   //start the CAN access
   CANbus.begin();
   rxmsg.timeout = 0;
-  
-  //try to wait for the Serial bus to come up for 1 second
-  delay(1000);
-  Serial.println(F("Teensy 3.2 CAN Receive Test."));
-  
-  //Set System Time
-  if (timeStatus()!= timeSet) {
-    Serial.println(F("Unable to sync with the RTC"));
-  } 
-  else {
-    Serial.println(F("RTC has set the system time"));
-  }
-  //print the time:
-  char timeDisplay[45]; 
-  sprintf(timeDisplay,"Current Time:\t%04i-%02i-%02iT%02i:%02i:%02i",year(),month(),day(),hour(),minute(),second());
-  Serial.println(timeDisplay); 
-
+  txmsg.timeout = 0;
     
   //print a header. The F( ) functions stores the string to be displayed in the larger flash memory
   Serial.print(F("     Count\t    micros\tYYYY-MM-DD HH:MM:SS.ms\t  CAN ID\tDLC\tPriority\thexPGN\tdecPGN\tDA\tSA"));
@@ -85,37 +112,31 @@ void setup() {
   }
   Serial.println(F("\tAcronym\tSignals"));
   
-  //before entering the loop, set the previous time
-  previousTime = now();
-  //synchronize the millisecondPerSecond timer
-  while (now() - previousTime < 1){
-    millisecondsPerSecond = 0;
-  }  
+  
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
 
-  //check to see if the number of seconds has changed to reset the millisecond timer for each second
-  if (now() - previousTime == 1){
-    previousTime = now();
-    millisecondsPerSecond = 0;
-  }
-
   // Uncomment this to synchronize the RTC to your PC time.
-  /*  if (Serial.available()) {
+  if (Serial.available()) {
       time_t t = processSyncMessage();
       if (t != 0) {
         Teensy3Clock.set(t); // set the RTC
         setTime(t);
       }
     }
-  */
-  
+   
   while(CANbus.read(rxmsg)){
     rxCount++;
+    CANRXTimer = 0; //reset the timer since the last CAN message was received.
+    
+    //add these to toggle the LEDs when a message arrives.
+    greenLEDstate = !greenLEDstate;
+    digitalWrite(greenLEDpin, greenLEDstate); 
     
     uint32_t ID = rxmsg.id;
+    uint8_t len = rxmsg.len;
 
     //Extract J1939 data fields from the extended CAN ID
     uint8_t SA = (ID & 0xFF); //mask the last two hex digits (8 bits) //Source Address
@@ -124,16 +145,15 @@ void loop() {
     if (PGN >= 0xF000) DA = 0xFF; //Broadcast message to a global address
     else {
       DA = (ID & 0x0000FF00) >> 8; //Destination specific address
-      PGN = (PGN & 0xFF00); //set the PGN value to have zeros on the second byte.
+      PGN = (PGN & 0x03FF00); //set the PGN value to have zeros on the second byte.
     }
     uint8_t priority = (ID & 0x1C000000) >> 26;
     
-    uint8_t len = rxmsg.len;
-
+  
     //Format the output string
     char timeCountIDandDLCdigits[100]; 
-    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%04i-%02i-%02iT%02i:%02i:%02i.%03i\t%08X\t%3i\t%8i\t%06X\t%6i\t%3i\t%3i",
-      rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(millisecondsPerSecond),ID,len,
+    sprintf(timeCountIDandDLCdigits,"%10i\t%10i\t%04i-%02i-%02iT%02i:%02i:%02i.%06i\t%08X\t%3i\t%8i\t%06X\t%6i\t%3i\t%3i",
+      rxCount,micros(),year(),month(),day(),hour(),minute(),second(),int(microsecondsPerSecond),ID,len,
       priority,PGN,PGN,DA,SA);
     Serial.print(timeCountIDandDLCdigits); 
 
@@ -150,11 +170,11 @@ void loop() {
       Serial.print(F("\tCCVS"));
       //
       Serial.print(F("\tSpeed (mph):\t"));
-      float SPN84 = word(rxmsg.buf[2],rxmsg.buf[1])/256.0; //Speed in kmph
+      float SPN84 = word(rxmsg.buf[2],rxmsg.buf[1])/256.0; //Speed in km/h
       float speedMPH = SPN84 * 0.621271;
       if (SPN84 <  251)
         Serial.print(speedMPH);
-      else if (SPN84 > 255) Serial.print(F("Not Available"));
+      else if (SPN84 >= 255) Serial.print(F("Not Available"));
       else Serial.print(F("Out of Range"));
       
       Serial.print(F("\tBrake Switch:\t"));
@@ -188,13 +208,14 @@ void loop() {
     Serial.println(); //Go to the next line
   }
   
-  if (LEDtoggleTimer >=100){
+   if (LEDtoggleTimer >=500){
     LEDtoggleTimer = 0; //reset the timer
     ledState = !ledState; // Toggle values
-    digitalWrite(redLEDpin,ledState);
+    digitalWrite(LED_BUILTIN,ledState);
   }
 
-  
+  if (CANRXTimer > 200) digitalWrite(greenLEDpin,LOW); //Turn off the LED if no CAN traffic is present.
+ 
 }
 
 time_t getTeensy3Time(){

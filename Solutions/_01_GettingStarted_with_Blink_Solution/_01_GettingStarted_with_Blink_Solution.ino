@@ -1,4 +1,4 @@
-/* 
+/* ANSWER
  * Title: A first sketch to blink an LED 
  * Description: This is a basic Ardunino program to show how to upload a program and
  * change its behavior. It is intended to be used with a board with an external LED.
@@ -14,24 +14,45 @@
  * has exceded a value. If it does, reset the time and change the LED state. You will have to 
  * declare a variable to use to keep track of the LED state.
  * 
- * 2. Add the green LED to the program and have it blink out of phase with the red LED.
+ * 2. Add the green LED to blink out of phase with the red LED.
  * 
- * 3. Keep track of the number of times the LEDs toggle. Display this count on the serial console.
+ * 
  */
-
+ 
 //Declare which pin is connected to the LED
 //Use the Teensy Reference Card and the board schematics to determine the pin number.
 const uint8_t redLEDpin = 5;
+const uint8_t greenLEDpin = 14;
+
+//declare a millisecont timer object that automatically keeps track of milliseconds.
+//Could also use an elapsedMicros object too.
+elapsedMillis blinkTimer;
+
+//declare and initialize the state variables for the LEDs.
+boolean redLEDstate = false;
+boolean greenLEDstate = true;
+
+//declare and initialize a counter variable.
+uint32_t toggleCount = 0;
 
 void setup() {
   // put your setup code here, to run once:
   pinMode(redLEDpin, OUTPUT);
+  pinMode(greenLEDpin, OUTPUT);
+  
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  digitalWrite(redLEDpin, HIGH);
-  delay(500); 
-  digitalWrite(redLEDpin, LOW);
-  delay(500); 
+  if (blinkTimer >= 100){  //execute after a set duration.
+    blinkTimer = 0; //reset the timer.
+    redLEDstate = !redLEDstate;
+    greenLEDstate = !greenLEDstate;
+    
+    digitalWrite(redLEDpin, redLEDstate); 
+    digitalWrite(greenLEDpin, greenLEDstate); 
+    
+    toggleCount++;
+    Serial.println(toggleCount);
+  }
 }
